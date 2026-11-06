@@ -54,17 +54,21 @@ for p in $RUNTIME_PKGS; do
 done
 info "pinned $pinned runtime packages"
 
-log "purge build tools (explicit list, no --auto-remove)"
-# shellcheck disable=SC2086
-apt-get purge -y \
-    gcc make bc bison flex libssl-dev libelf-dev device-tree-compiler \
-    meson ninja-build cmake pkg-config gettext git \
-    python3-dev libglib2.0-dev libgudev-1.0-dev libqmi-glib-dev \
-    libprotobuf-c-dev protobuf-c-compiler protobuf-compiler \
-    gobject-introspection libgirepository1.0-dev libgirepository-2.0-dev \
-    libpolkit-gobject-1-dev valac libudev-dev libsystemd-dev \
-    libjson-c-dev python3-gi 2>/dev/null || true
-apt-get autoremove -y || true
+log "remove build toolchain files (keep dpkg packages)"
+# DO NOT `apt-get purge/autoremove` here. The meson-installed sensor binaries
+# link against libqmi-glib / libglib / libgudev / libprotobuf-c runtime libs;
+# purging the -dev packages makes apt consider those runtime libs orphaned and
+# removes them, which broke /usr/bin/ssccli on run 9. Removing the toolchain
+# FILES directly is deterministic and keeps every runtime lib intact.
+rm -f /usr/bin/gcc* /usr/bin/*-gcc* /usr/bin/g++* /usr/bin/cc \
+      /usr/bin/make /usr/bin/bc /usr/bin/bison /usr/bin/flex \
+      /usr/bin/meson /usr/bin/ninja /usr/bin/cmake /usr/bin/pkg-config \
+      /usr/bin/valac /usr/bin/protoc /usr/bin/protoc-gen-c \
+      /usr/bin/dtc /usr/bin/git /usr/bin/gettext* 2>/dev/null || true
+# Headers and static archives are build-time artifacts, not runtime deps.
+rm -rf /usr/include /usr/lib/aarch64-linux-gnu/*.a \
+       /usr/lib/aarch64-linux-gnu/pkgconfig /usr/share/pkgconfig \
+       /usr/lib/python3*/site-packages 2>/dev/null || true
 apt-get clean
 rm -rf /var/lib/apt/lists/*
 
