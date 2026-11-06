@@ -86,23 +86,38 @@ actions/checkout (主仓 + linux submodule)
 sha256 —— 延续 `docs/modem-rootfs-restore-2026-11-05.md` §1「模块必须与 Image
 同一次构建」的可追溯要求。
 
-## 首次上 CI 前的准备（阶段 0）
+## 当前状态（CI 已跑通）
 
-1. GitHub 建 **private** 主仓 `linux-dada`（固件含高通专有二进制，勿公开）。
-   单文件最大 46.3MB < GitHub 100MB 硬限，无需 LFS。
-2. `git submodule add -b dada-mainline --depth 1
-   https://github.com/7Night-kqx/linux.git linux`，checkout
-   `a2994ff9fca18d64991a155fd9b30557c64b4e57` 后 `git add linux` 固定 gitlink。
-   内核仓是 shallow（现 17 commit），CI 用 `submodules: recursive` + `fetch-depth: 1`。
-   **该 commit 只存在于本地内核仓，必须先 push 到 `7Night-kqx/linux` 的
-   `dada-mainline` 分支，否则 CI 的 submodule fetch 会拿到不存在的 SHA。**
-3. 运行 `bash scripts/ci/dry-run.sh` 做本地静态校验（不需要 root / arm64）。
-4. **DTS 清理（已完成）**：`a2994ff9f` 把 43 条 bring-up `bootargs` 收敛为
-   顶层 `/chosen` 里唯一一条（usbhost 轨、`console=tty0`、重复与
-   `rdinit`/`dada_*`/`panel_*`/`maxcpus` 残留全清）。已用 `make dtbs` 验证
-   可编译，且反解 DTB 与清理前除 `/chosen` 和 `model` 外逐字节一致。
-5. 首次实跑确认 trixie 的 gcc 能编过 7.3-rc5、`meson ≥1.4`（libssc 要求）、
-   `libgirepository-2.0-dev` / `libpolkit-gobject-1-dev` 等包名在 trixie 存在。
+仓库 `7Night-kqx/linux-dada`（**public**，用户决定保持公开；内含高通专有
+固件，公开分发风险由用户承担）。首次成功的完整 run 产出内核镜像、模块、
+rootfs.tar.gz 与传感器服务包。
+
+- 内核子模块 `7Night-kqx/linux@dada-mainline` 的 gitlink 与
+  `config/kernel-ref.txt` 必须一致；改内核后**先把该 commit push 到内核仓**，
+  再更新主仓 gitlink 与 pin，否则 CI 的 submodule fetch 找不到 SHA。
+- `bash scripts/ci/dry-run.sh` 做本地静态校验（不需要 root / arm64）。
+- 已完成：`a2994ff9f` 把 43 条 bring-up `bootargs` 收敛为顶层 `/chosen` 唯一
+  一条；`bcfc9a69b` 把 USB-C 从 gadget 切到 **host 轨**（见下）。
+
+### USB-C 角色：host（可接外设）
+
+`bcfc9a69b` 之前构建的是 gadget 轨（`USB_DWC3_GADGET=y` +
+`dr_mode="peripheral"`），USB-C 只能当 CDC ACM 串口，**接不了 U 盘/键鼠/ hub**。
+现为 host 轨，三者必须一致：
+
+| 位置 | 值 |
+|---|---|
+| `dada_defconfig` | `USB_DWC3_HOST=y`，gadget 全套 `is not set`，xHCI/STORAGE/UAS/HID 全 `=y` 内建 |
+| `sm8750-xiaomi-dada-mainline.dts` `&usb` | `dr_mode = "host"` |
+| `config/config-assertions.txt` | 逐符号断言锁死上述角色，防止回归 |
+
+`DWC3 Mode Selection` 是 Kconfig `choice`，HOST/GADGET 互斥；sm8750.dtsi 无
+独立 XHCI 节点，`dwc3/host.c` 创建的 `xhci-hcd` 平台设备由 `xhci-plat` 绑定，
+故 `USB_XHCI_HCD` / `USB_XHCI_PLATFORM` 必须同时开，否则插外设完全无反应
+且不报错。host 侧驱动改为 `=y` 内建，避免依赖 udev/modprobe 时序。
+
+需要 USB gadget 控制台（黑屏抓 dmesg）时，需另起一条 usbdebug 轨，把以上
+三处整体反向切换，不能用本镜像。
 
 ## 上机验收（照 `docs/sensor-fix.md` 验收 B）
 

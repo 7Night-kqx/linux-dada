@@ -40,5 +40,23 @@ MODULE_SIG=n
 MODULE_COMPRESS=n
 EXTRA_FIRMWARE_DIR="firmware"
 
+# --- USB-C host track (see docs/CI.md) ---
+# DWC3 Mode Selection is a Kconfig choice; HOST and GADGET are mutually
+# exclusive. Without HOST=y + xHCI built in, no USB peripheral (U disk,
+# keyboard, hub) can be attached -- the controller stays in gadget mode.
+USB_DWC3_HOST=y
+USB_DWC3_GADGET=n
+USB_GADGET=n
+USB_DWC3_QCOM=y
+USB_XHCI_HCD=y
+USB_XHCI_PLATFORM=y
+USB_STORAGE=y
+USB_UAS=y
+BLK_DEV_SD=y
+HID_SUPPORT=y
+HID=y
+HID_GENERIC=y
+USB_HID=y
+
 # --- runtime-loaded drivers (firmware lives in /lib/firmware/) ---
 ATH12K=m
