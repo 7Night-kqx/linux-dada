@@ -21,12 +21,17 @@ log "pin runtime libraries (protect from autoremove)"
 # Derive the owning packages from the ACTUAL ldd output, so Debian trixie's
 # t64 renames (libglib2.0-0t64, libpolkit-gobject-1-0t64, ...) cannot slip
 # through a hardcoded grep list.
-RUNTIME_LIBS=$(for b in /opt/dada-sensors/bin/hexagonrpcd /usr/bin/ssccli \
-                        /usr/libexec/iio-sensor-proxy /usr/bin/monitor-sensor; do
-                  ldd "$b" 2>/dev/null || true
-               done | awk '/=> \// {print $3}' | sort -u)
-RUNTIME_PKGS=$(for lib in $RUNTIME_LIBS; do dpkg -S "$lib" 2>/dev/null | cut -d: -f1; done \
-               | tr ',' '\n' | sed 's/[[:space:]]//g' | sort -u)
+# NOTE: every command substitution below is guarded with `|| true`. Under
+# `set -o pipefail`, a single ldd/dpkg -S miss (exit 1) would otherwise abort
+# the whole cleanup -- this was the run-8 failure at line 29.
+RUNTIME_LIBS=$( { for b in /opt/dada-sensors/bin/hexagonrpcd /usr/bin/ssccli \
+                           /usr/libexec/iio-sensor-proxy /usr/bin/monitor-sensor; do
+                      ldd "$b" 2>/dev/null || true
+                  done; } | awk '/=> \// {print $3}' | sort -u ) || true
+RUNTIME_PKGS=$( { for lib in $RUNTIME_LIBS; do
+                      dpkg -S "$lib" 2>/dev/null || true
+                  done; } | cut -d: -f1 | tr ',' '\n' \
+                      | sed 's/[[:space:]]//g' | sort -u ) || true
 # Always keep the init/service plumbing regardless of ldd output.
 RUNTIME_PKGS="$RUNTIME_PKGS
 systemd
