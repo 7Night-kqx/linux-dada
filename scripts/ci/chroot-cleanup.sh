@@ -11,6 +11,10 @@
 set -euo pipefail
 source "$(dirname "$0")/common.sh"
 
+# Surface the real failing line as a GitHub annotation (the Actions API is
+# blocked here, so the job page otherwise only shows a bare exit code).
+trap 'rc=$?; printf "::error::chroot-cleanup.sh failed at line %s (exit %s): %s\n" "$LINENO" "$rc" "$BASH_COMMAND" >&2' ERR
+
 export DEBIAN_FRONTEND=noninteractive
 
 log "pin runtime libraries (protect from autoremove)"
@@ -33,9 +37,17 @@ kmod
 libc6
 libgcc-s1"
 RUNTIME_PKGS=$(echo "$RUNTIME_PKGS" | sed '/^$/d' | sort -u | tr '\n' ' ')
-# shellcheck disable=SC2086
-apt-mark manual $RUNTIME_PKGS
-info "pinned $(echo $RUNTIME_PKGS | wc -w) runtime packages"
+# apt-mark manual exits 1 on a single unknown package and would abort the
+# whole purge under set -e. Mark each package independently, logging misses.
+pinned=0
+for p in $RUNTIME_PKGS; do
+    if apt-mark manual "$p" >/dev/null 2>&1; then
+        pinned=$((pinned+1))
+    else
+        warn "runtime package not found for pinning: $p"
+    fi
+done
+info "pinned $pinned runtime packages"
 
 log "purge build tools (explicit list, no --auto-remove)"
 # shellcheck disable=SC2086
@@ -62,7 +74,11 @@ systemctl --root=/ disable hexagonrpcd-adsp-sensorspd.service 2>/dev/null || tru
 rm -f /etc/systemd/system/multi-user.target.wants/hexagonrpcd-adsp-*.service
 
 log "post-cleanup runtime check"
-KREL=$(ls -1 /lib/modules | head -1)
+# `ls | head` trips set -o pipefail (SIGPIPE) when there are multiple module
+# dirs; use a pure shell glob instead.
+KREL=""
+for d in /lib/modules/*; do [[ -d $d ]] && { KREL=${d##*/}; break; }; done
+[[ -n $KREL ]] || die "no /lib/modules/<release> directory"
 for b in /opt/dada-sensors/bin/hexagonrpcd /usr/bin/ssccli \
          /usr/libexec/iio-sensor-proxy; do
     [[ -x $b ]] || die "runtime binary removed: $b"
