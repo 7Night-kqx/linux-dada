@@ -31,18 +31,32 @@ P=$(grep -v '^#' config/kernel-ref.txt | tr -d '[:space:]')
 [[ $K == "$P" ]] || die "linux HEAD $K != pinned $P"
 info "linux @ $K"
 python3 - <<'PY'
-import json, subprocess
+import json, os, re, subprocess
 for c in json.load(open('config/sources.json'))['components']:
+    sha = c['sha']
+    assert re.fullmatch(r'[0-9a-f]{40}', sha), (c['name'], 'bad sha', sha)
     d = f"Softs/sensors-src/{c['name']}"
-    h = subprocess.check_output(['git','-C',d,'rev-parse','HEAD'], text=True).strip()
-    assert h == c['sha'], (c['name'], h, c['sha'])
-    print(f"  ok   {c['name']} @ {h[:12]}")
+    # The local working copies are gitignored; CI clones them from sources.json
+    # at build time, so a clean checkout legitimately has no such directory.
+    if os.path.isdir(os.path.join(d, '.git')):
+        h = subprocess.check_output(['git','-C',d,'rev-parse','HEAD'], text=True).strip()
+        assert h == sha, (c['name'], h, sha)
+        print(f"  ok   {c['name']} @ {h[:12]} (pinned, local copy matches)")
+    else:
+        print(f"  ok   {c['name']} @ {sha[:12]} (pinned; CI will clone)")
 PY
 
 log "4. patches apply cleanly to pinned sources (reverse-check)"
+# Only possible when the local working copies exist (they are gitignored).
+# In CI the patches are applied forward to freshly cloned pinned sources by
+# chroot-build.sh instead.
 for c in hexagonrpc iio-sensor-proxy; do
-    git -C "Softs/sensors-src/$c" apply --check -R "$REPO/Softs/patches/$c-dada.patch"
-    info "$c-dada.patch"
+    if [[ -d "Softs/sensors-src/$c/.git" ]]; then
+        git -C "Softs/sensors-src/$c" apply --check -R "$REPO/Softs/patches/$c-dada.patch"
+        info "$c-dada.patch (reverse-check on local copy)"
+    else
+        info "$c-dada.patch (local copy absent; CI applies forward to pinned clone)"
+    fi
 done
 
 log "5. defconfig assertions (against dada_defconfig as a proxy for .config)"
