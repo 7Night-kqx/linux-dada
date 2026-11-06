@@ -24,8 +24,8 @@ JOBS=${JOBS:-$(nproc)}
 
 log "toolchain (native arm64, no CROSS_COMPILE)"
 [[ $(uname -m) == aarch64 ]] || die "chroot is not aarch64: $(uname -m)"
-gcc --version | head -1
-meson --version | head -1
+# gcc/meson checks come AFTER apt install below: the minbase rootfs has no
+# compiler yet, calling them here would fail with exit code 127.
 
 # ---------------------------------------------------------------- dependencies
 log "apt: build + runtime dependencies (Debian trixie names)"
@@ -55,6 +55,10 @@ apt-get install -y --no-install-recommends \
     libsystemd-dev libgirepository-2.0-dev \
     file tar xz-utils ca-certificates
 info "dependencies installed"
+log "toolchain versions"
+gcc --version | head -1
+meson --version | head -1
+need gcc; need meson; need ninja; need make; need git; need dtc
 
 # ---------------------------------------------------------------- kernel
 log "kernel: make O=../build-dada-evidence ARCH=arm64 dada_defconfig"
