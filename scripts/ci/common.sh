@@ -5,8 +5,15 @@ set -euo pipefail
 
 log()  { printf '\n=== %s\n' "$*"; }
 info() { printf '  ok   %s\n' "$*"; }
-warn() { printf '  WARN %s\n' "$*" >&2; }
-die()  { printf 'ERROR: %s\n' "$*" >&2; exit 1; }
+warn() { printf '  WARN %s\n' "$*" >&2; printf '::warning::%s\n' "$*"; }
+# Emit a GitHub Actions annotation too: the job page only exposes the bare
+# step exit code, so without ::error:: the real cause is invisible when the
+# (blocked) Actions API cannot be used to fetch logs.
+die()  {
+    printf 'ERROR: %s\n' "$*" >&2
+    printf '::error::%s\n' "$*"
+    exit 1
+}
 
 need() { command -v "$1" >/dev/null 2>&1 || die "missing command: $1"; }
 

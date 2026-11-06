@@ -13,6 +13,10 @@
 set -euo pipefail
 source "$(dirname "$0")/common.sh"
 
+# Surface the real failing line as a GitHub annotation. The job page only
+# shows the bare step exit code and the Actions API is unavailable here.
+trap 'rc=$?; printf "::error::chroot-build.sh failed at line %s (exit %s): %s\n" "$LINENO" "$rc" "$BASH_COMMAND" >&2' ERR
+
 WS=/workspace
 SRC=$WS/Softs/sensors-src
 PATCHES=$WS/Softs/patches
@@ -42,7 +46,12 @@ Signed-By: /usr/share/keyrings/debian-archive-keyring.gpg
 EOF
 # Drop any leftover deb.debian.org entries (slow from the runner) but keep
 # other sources (e.g. security) that mmdebstrap may have generated.
-grep -rl 'deb.debian.org' /etc/apt/sources.list /etc/apt/sources.list.d/ 2>/dev/null | xargs -r rm -f
+# Guard against missing files: grep -r returns 2 when a path does not exist,
+# which under `set -o pipefail` + `set -e` would abort the whole build.
+for f in /etc/apt/sources.list /etc/apt/sources.list.d/*; do
+    [[ -f $f ]] || continue
+    grep -q 'deb.debian.org' "$f" && rm -f "$f" || true
+done
 apt-get update
 apt-get install -y --no-install-recommends \
     gcc make bc bison flex libssl-dev libelf-dev device-tree-compiler \
