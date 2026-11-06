@@ -20,12 +20,24 @@ need mmdebstrap
 # 1. official Debian minimal rootfs (native arm64, no qemu, no cross compiler)
 log "mmdebstrap --variant=minbase ($SUITE / arm64)"
 sudo rm -rf "$ROOTFS"
-sudo mmdebstrap \
-    --architectures=arm64 \
-    --variant=minbase \
-    --include=ca-certificates \
-    "$SUITE" "$ROOTFS" "$MIRROR"
+# mmdebstrap's internal apt exits 25 on dependency/mirror failures. Capture
+# full output to a log and, when it fails, print the tail so the Actions log
+# shows the real apt error instead of just "exit code 25".
+MM_LOG=$REPO/out-stage/mmdebstrap.log
+sudo mkdir -p "$REPO/out-stage"
+MM_ARGS=(--architectures=arm64 --variant=minbase --include=ca-certificates)
+if [[ ${DADA_MMDEBSTRAP_DEBUG:-0} == 1 ]]; then MM_ARGS+=(--debug); fi
+set +e
+sudo mmdebstrap "${MM_ARGS[@]}" "$SUITE" "$ROOTFS" "$MIRROR" 2>&1 | sudo tee "$MM_LOG"
+MM_RC=${PIPESTATUS[0]}
+set -e
+if [[ $MM_RC -ne 0 ]]; then
+    echo "ERROR: mmdebstrap exited $MM_RC; last 80 lines:" >&2
+    tail -80 "$MM_LOG" >&2
+    exit "$MM_RC"
+fi
 [[ -f $ROOTFS/bin/bash ]] || die "mmdebstrap produced no /bin/bash"
+info "mmdebstrap ok ($(find "$ROOTFS" -type f | wc -l) files)"
 
 # 2. staging — everything under /workspace is removed by chroot-cleanup.sh
 log "stage build inputs into $WS"

@@ -88,9 +88,19 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y mmdebstrap dpkg-dev
+          mmdebstrap --version
+          echo "=== runner ==="
+          uname -a
+          echo "=== disk / target dir preflight ==="
+          df -h "$GITHUB_WORKSPACE"
+          echo "MIRROR=$MIRROR SUITE=$SUITE"
+          timeout 30 curl -fsSI "$MIRROR/dists/$SUITE/InRelease" | head -5
 
       - name: Prepare Debian minimal rootfs + chroot staging
-        run: bash scripts/ci/host-prepare.sh
+        run: |
+          # Verbose on failure: mmdebstrap's apt returns 25 for dependency /
+          # mirror errors; --debug makes the real cause visible in the log.
+          DADA_MMDEBSTRAP_DEBUG=1 bash scripts/ci/host-prepare.sh
 
       - name: chroot — build kernel, modules and sensor services
         run: sudo chroot rootfs /bin/bash -lc 'cd /ci && ./chroot-build.sh'
