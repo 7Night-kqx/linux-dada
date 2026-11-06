@@ -1,0 +1,133 @@
+name: build-dada-debian
+
+# Single native-arm64 job: build the official Debian minimal rootfs, then
+# build the kernel, install modules and build the userspace sensor services
+# INSIDE that rootfs via chroot. No cross compiler, no QEMU, no old build
+# scripts. Build-time code/objects are purged before the rootfs is packaged.
+on:
+  workflow_dispatch:
+    inputs:
+      publish:
+        description: 'Create a GitHub Release from the artifacts'
+        type: boolean
+        default: false
+  push:
+    branches: [main, dev]
+    tags: ['v*']
+    paths:
+      - '.github/**'
+      - 'config/**'
+      - 'scripts/**'
+      - 'Softs/patches/**'
+      - 'Softs/sensors/**'
+      - 'tools/**'
+      - 'firmware/**'
+      - 'linux'                 # submodule gitlink change
+  pull_request:
+    branches: [dev]
+
+concurrency:
+  group: dada-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  SUITE: trixie
+  MIRROR: https://deb.debian.org/debian
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04-arm        # native aarch64
+    timeout-minutes: 180
+    steps:
+      - name: Checkout main repo + linux submodule
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+          fetch-depth: 1
+
+      # actions/checkout's `submodules: recursive` + fetch-depth:1 can land on
+      # the branch tip instead of the gitlink when the pinned SHA is behind it.
+      # Force the exact pinned commit (GitHub allows fetch by SHA), then verify.
+      - name: Force linux submodule to pinned SHA
+        run: |
+          PIN=$(grep -v '^#' config/kernel-ref.txt | tr -d '[:space:]')
+          echo "pin=$PIN current=$(git -C linux rev-parse HEAD)"
+          if [ "$(git -C linux rev-parse HEAD)" != "$PIN" ]; then
+            git -C linux fetch --depth 1 origin "$PIN"
+            git -C linux checkout --detach "$PIN"
+          fi
+          test "$(git -C linux rev-parse HEAD)" = "$PIN" || {
+            echo "ERROR: linux submodule HEAD != pinned SHA"; exit 1; }
+          git -C linux rev-parse --short HEAD
+
+      - name: Verify pinned SHAs and inputs
+        run: |
+          KERNEL_SHA=$(git -C linux rev-parse HEAD)
+          PIN_SHA=$(grep -v '^#' config/kernel-ref.txt | tr -d '[:space:]')
+          echo "kernel submodule: $KERNEL_SHA"
+          echo "pinned:           $PIN_SHA"
+          test "$KERNEL_SHA" = "$PIN_SHA" || { echo "ERROR: submodule SHA drifted"; exit 1; }
+          test -f linux/arch/arm64/configs/dada_defconfig
+          test -f linux/arch/arm64/boot/dts/qcom/sm8750-xiaomi-dada-mainline.dts
+          python3 -c 'import json;json.load(open("config/sources.json"))'
+          test -f tools/mkbootimg/mkbootimg.py
+          n=$(find firmware/qcom/sm8750 -maxdepth 1 -name 'adsp*' | wc -l)
+          echo "adsp firmware files: $n"
+          test "$n" -eq 60 || { echo "ERROR: expected 60 adsp* files"; exit 1; }
+          # kbuild resolves EXTRA_FIRMWARE_DIR="firmware" to $(srctree)/firmware.
+          for f in $(sed -n 's/^CONFIG_EXTRA_FIRMWARE="\(.*\)"$/\1/p' \
+                     linux/arch/arm64/configs/dada_defconfig | tr ' ' '\n'); do
+            test -s "linux/firmware/$f" || { echo "ERROR: missing builtin fw $f"; exit 1; }
+          done
+          echo "  ok   all 14 EXTRA_FIRMWARE blobs present in linux/firmware"
+
+      - name: Install host mmdebstrap
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y mmdebstrap dpkg-dev
+
+      - name: Prepare Debian minimal rootfs + chroot staging
+        run: bash scripts/ci/host-prepare.sh
+
+      - name: chroot — build kernel, modules and sensor services
+        run: sudo chroot rootfs /bin/bash -lc 'cd /ci && ./chroot-build.sh'
+
+      - name: chroot — purge build-time code and objects
+        run: sudo chroot rootfs /bin/bash -lc 'cd /ci && ./chroot-cleanup.sh'
+
+      - name: Package rootfs + provenance
+        run: bash scripts/ci/host-package.sh
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: dada-${{ github.run_id }}
+          path: out/
+          retention-days: 14
+          if-no-files-found: error
+
+  release:
+    needs: build
+    if: startsWith(github.ref, 'refs/tags/v') || (github.event_name == 'workflow_dispatch' && inputs.publish)
+    permissions:
+      contents: write
+    runs-on: ubuntu-24.04-arm
+    steps:
+      - name: Download build artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: dada-${{ github.run_id }}
+          path: out/
+      - name: Create Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ startsWith(github.ref, 'refs/tags/') && github.ref_name || format('dada-{0}', github.run_id) }}
+          name: dada Debian ${{ github.ref_name }}
+          body_path: out/RELEASE_NOTES.md
+          files: |
+            out/*
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

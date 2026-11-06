@@ -1,0 +1,44 @@
+# Post-olddefconfig symbol assertions.
+# Format: SYMBOL=y | SYMBOL=m | SYMBOL=n | SYMBOL="value" | SYMBOL!value
+# Checked against build-dada-evidence/.config by scripts/ci/chroot-build.sh.
+# Derived from docs/sensor-fix.md (acceptance A/B), docs/BUILD.md and the
+# historically verified build-dada-debian-systemd-usbhost.sh STEP 4 chain.
+# NOTE: we deliberately keep defconfig's =m for ATH12K / QCOM_Q6V5_PAS
+# because the whole main-repo firmware/ tree is installed into the rootfs.
+
+# --- QRTR / FastRPC / ADSP sensor transport ---
+QRTR=y
+QRTR_SMD=y
+QCOM_FASTRPC=y
+RPMSG=y
+RPMSG_QCOM_GLINK=y
+RPMSG_QCOM_GLINK_SMEM=y
+QCOM_Q6V5_PAS=m
+
+# --- built-in DTB / EFI / systemd ---
+ARM64_BUILTIN_DTB=y
+ARM64_BUILTIN_DTB_FORCE=y
+BUILTIN_DTB_NAME="qcom/sm8750-xiaomi-dada-mainline"
+EFI=y
+EFI_STUB=y
+EFIVAR_FS=y
+CGROUPS=y
+AUTOFS_FS=y
+TMPFS_XATTR=y
+VFAT_FS=y
+NLS_UTF8=y
+
+# --- input (gpio-keys volume-up + evdev for libinput) ---
+INPUT_EVDEV=y
+KEYBOARD_GPIO=y
+
+# --- modules / reproducibility ---
+MODULES=y
+LOCALVERSION=""
+INITRAMFS_SOURCE=""
+MODULE_SIG=n
+MODULE_COMPRESS=n
+EXTRA_FIRMWARE_DIR="firmware"
+
+# --- runtime-loaded drivers (firmware lives in /lib/firmware/) ---
+ATH12K=m

@@ -1,0 +1,1 @@
+mcfg_hw/generic/common/Bonito/STANDALONE/LA/SS_CDMALess/mcfg_hw.mbn

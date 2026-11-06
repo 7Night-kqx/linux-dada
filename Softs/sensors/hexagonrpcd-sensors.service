@@ -1,0 +1,17 @@
+[Unit]
+Description=FastRPC listener for Qualcomm SSC sensors (dada / SM8750)
+Documentation=https://github.com/linux-msm/hexagonrpc
+Requires=dev-fastrpc-adsp-secure.device
+After=dev-fastrpc-adsp-secure.device
+Before=iio-sensor-proxy.service
+# The ADSP firmware is loaded by qcom_q6v5_pas (see 00-adsp.conf).
+After=systemd-modules-load.service
+
+[Service]
+Type=simple
+ExecStart=/opt/dada-sensors/bin/hexagonrpcd -f /dev/fastrpc-adsp-secure -d adsp -s -R /var/lib/hexagonrpc
+Restart=always
+RestartSec=3
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,30 @@
+{
+  "$schema": "internal: dada CI source pins",
+  "description": "Pinned upstream commits for the userspace sensor stack. CI clones each at this exact SHA and applies the corresponding patch from Softs/patches/.",
+  "components": [
+    {
+      "name": "hexagonrpc",
+      "url": "https://github.com/linux-msm/hexagonrpc.git",
+      "sha": "598b591ae9da6a6cfe2ca5ea78998019ca6395ea",
+      "patch": "Softs/patches/hexagonrpc-dada.patch",
+      "build_order": 1,
+      "notes": "dada ODM /odm/etc/sensors/config VFS mirror + writable sensors/state registry"
+    },
+    {
+      "name": "libssc",
+      "url": "https://codeberg.org/DylanVanAssche/libssc.git",
+      "sha": "54dd13e36d65c21263cf5b0f4a70c230a77b26bc",
+      "patch": null,
+      "build_order": 2,
+      "notes": "QMI/QRTR client for SSC; ssccli used for gyro direct read"
+    },
+    {
+      "name": "iio-sensor-proxy",
+      "url": "https://gitlab.freedesktop.org/hadess/iio-sensor-proxy.git",
+      "sha": "0085ddf8ecb173a1c5fcf2344aa40e561125354f",
+      "patch": "Softs/patches/iio-sensor-proxy-dada.patch",
+      "build_order": 3,
+      "notes": "udev ssc-accel/ssc-light/ssc-compass tags + claim-during-open fix"
+    }
+  ]
+}

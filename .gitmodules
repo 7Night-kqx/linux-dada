@@ -1,0 +1,5 @@
+[submodule "linux"]
+	path = linux
+	url = https://github.com/7Night-kqx/linux.git
+	branch = dada-mainline
+	shallow = true

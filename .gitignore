@@ -1,0 +1,37 @@
+# ===== 构建产物 / 镜像（永不入库） =====
+/out/
+/rootfs/
+/build-dada-evidence/
+/boot-img/
+/work/
+*.img
+*.tar.gz
+*.tar.xz
+*.tgz
+*.log
+SHA256SUMS
+provenance.json
+
+# ===== 设备私有数据（红线，参考旧仓纪律） =====
+# /var/lib/hexagonrpc 数据树、persist/EFS/RPMB、Wi-Fi MAC、序列号
+/device-private/
+/evidence/
+*.bin.bak
+getprop*
+cmdline*
+serialno*
+
+# ===== 嵌套仓库（Softs/sensors-src 是本地参考副本，整体不入主仓索引） =====
+# CI 从 config/sources.json 的 pinned SHA 重新 clone，不依赖这些工作副本。
+# 必须排除整条路径：只排 .git/ 会让 git 把它们当 embedded repo 存成 gitlink，
+# clone 主仓时拿不到内容（且会刷 warning）。
+/Softs/sensors-src/
+
+# ===== Python / 编辑器 / 系统 =====
+__pycache__/
+*.pyc
+.vscode/
+.idea/
+.DS_Store
+*~
+*.swp
