@@ -35,7 +35,10 @@ permissions:
 
 env:
   SUITE: trixie
-  MIRROR: https://deb.debian.org/debian
+  # TUNA mirror: deb.debian.org is slow/unreachable from some runner networks
+  # (mmdebstrap's apt returned exit code 25 there). This URL is also written
+  # into the generated rootfs' apt sources, so chroot apt uses it too.
+  MIRROR: https://mirrors.tuna.tsinghua.edu.cn/debian
 
 jobs:
   build:
@@ -87,7 +90,11 @@ jobs:
       - name: Install host mmdebstrap
         run: |
           sudo apt-get update
-          sudo apt-get install -y mmdebstrap dpkg-dev
+          # debian-archive-keyring is REQUIRED: an Ubuntu runner's apt does not
+          # trust Debian's InRelease signature, otherwise mmdebstrap's internal
+          # apt exits 25. host-prepare.sh passes it via --keyring.
+          sudo apt-get install -y mmdebstrap dpkg-dev debian-archive-keyring
+          test -f /usr/share/keyrings/debian-archive-keyring.gpg
           mmdebstrap --version
           echo "=== runner ==="
           uname -a
@@ -101,6 +108,33 @@ jobs:
           # Verbose on failure: mmdebstrap's apt returns 25 for dependency /
           # mirror errors; --debug makes the real cause visible in the log.
           DADA_MMDEBSTRAP_DEBUG=1 bash scripts/ci/host-prepare.sh
+
+      # Always publish the rootfs bootstrap log. It is written before any
+      # failure can abort the job, so it is available even when the step above
+      # exits 25. Also echo the tail into the job summary so the cause is
+      # visible on the run page without needing the (blocked) Actions API.
+      - name: Diagnostics — rootfs bootstrap log
+        if: always()
+        run: |
+          L=out-stage/mmdebstrap.log
+          if [ -f "$L" ]; then
+            echo "=== mmdebstrap log (last 120 lines) ==="
+            tail -120 "$L"
+            { echo '```'; tail -120 "$L"; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "no mmdebstrap log produced"; fi
+          echo "=== workspace state ==="
+          ls -la rootfs 2>/dev/null | head -20 || true
+          df -h "$GITHUB_WORKSPACE"
+
+      - name: Upload diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: dada-diagnostics-${{ github.run_id }}
+          path: out-stage/*.log
+          retention-days: 7
+          if-no-files-found: warn
 
       - name: chroot — build kernel, modules and sensor services
         run: sudo chroot rootfs /bin/bash -lc 'cd /ci && ./chroot-build.sh'

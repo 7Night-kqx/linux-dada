@@ -30,6 +30,19 @@ meson --version | head -1
 # ---------------------------------------------------------------- dependencies
 log "apt: build + runtime dependencies (Debian trixie names)"
 export DEBIAN_FRONTEND=noninteractive
+# mmdebstrap writes the MIRROR into the rootfs' apt sources, but make it
+# explicit (deb822) so chroot apt always uses the fast TUNA mirror. The
+# debian-archive-keyring package installed by --include verifies InRelease.
+cat > /etc/apt/sources.list.d/dada-debian.sources <<EOF
+Types: deb
+URIs: https://mirrors.tuna.tsinghua.edu.cn/debian
+Suites: trixie trixie-updates
+Components: main
+Signed-By: /usr/share/keyrings/debian-archive-keyring.gpg
+EOF
+# Drop any leftover deb.debian.org entries (slow from the runner) but keep
+# other sources (e.g. security) that mmdebstrap may have generated.
+grep -rl 'deb.debian.org' /etc/apt/sources.list /etc/apt/sources.list.d/ 2>/dev/null | xargs -r rm -f
 apt-get update
 apt-get install -y --no-install-recommends \
     gcc make bc bison flex libssl-dev libelf-dev device-tree-compiler \

@@ -10,7 +10,7 @@ REPO=${REPO:-$(git rev-parse --show-toplevel)}
 ROOTFS=${ROOTFS:-$REPO/rootfs}
 WS=$ROOTFS/workspace
 SUITE=${SUITE:-trixie}
-MIRROR=${MIRROR:-https://deb.debian.org/debian}
+MIRROR=${MIRROR:-https://mirrors.tuna.tsinghua.edu.cn/debian}
 
 need mmdebstrap
 [[ -f $REPO/.gitmodules ]] || die ".gitmodules missing"
@@ -25,8 +25,17 @@ sudo rm -rf "$ROOTFS"
 # shows the real apt error instead of just "exit code 25".
 MM_LOG=$REPO/out-stage/mmdebstrap.log
 sudo mkdir -p "$REPO/out-stage"
-MM_ARGS=(--architectures=arm64 --variant=minbase --include=ca-certificates)
+# On an Ubuntu runner the host apt does NOT trust Debian's archive key, so
+# mmdebstrap's internal apt fails to verify trixie/InRelease and exits 25.
+# --keyring points the build-time apt at the Debian keyring installed by the
+# workflow; --include=debian-archive-keyring puts that key INTO the generated
+# rootfs so chroot apt (used later to install build deps) can verify too.
+MM_ARGS=(--architectures=arm64 --variant=minbase
+         --include=ca-certificates,debian-archive-keyring)
+KEYRING=/usr/share/keyrings/debian-archive-keyring.gpg
+if [[ -f $KEYRING ]]; then MM_ARGS+=(--keyring "$KEYRING"); fi
 if [[ ${DADA_MMDEBSTRAP_DEBUG:-0} == 1 ]]; then MM_ARGS+=(--debug); fi
+log "mmdebstrap args: ${MM_ARGS[*]} $SUITE $ROOTFS $MIRROR"
 set +e
 sudo mmdebstrap "${MM_ARGS[@]}" "$SUITE" "$ROOTFS" "$MIRROR" 2>&1 | sudo tee "$MM_LOG"
 MM_RC=${PIPESTATUS[0]}
