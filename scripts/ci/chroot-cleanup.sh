@@ -73,6 +73,8 @@ apt-get clean
 rm -rf /var/lib/apt/lists/*
 
 log "remove build sources, objects, caches"
+# Never leave the workflow-supplied plaintext password behind.
+rm -f /ci/dada-account.env
 rm -rf /workspace /opt/dada-sensors/bin/../src /usr/src /root/.cache /tmp/*
 # modules_install leaves symlinks into /workspace/linux; they are dead after
 # /workspace removal and would confuse depmod on the device.

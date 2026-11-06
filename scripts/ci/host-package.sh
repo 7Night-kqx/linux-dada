@@ -89,6 +89,16 @@ purged before packaging.
 - kernel release: \`$KREL\`
 - sensor sources: see \`config/sources.json\` (3 pinned SHAs + 2 patches)
 
+## Login
+- Normal user: the \`username\` workflow_dispatch input (default **dada**)
+- Password: the \`password\` input (default **123456**), applied to BOTH the
+  normal user and root.
+- SSH: openssh-server is installed and enabled; password auth and root login
+  are allowed so WiFi SSH is usable (the gadget serial console is gone on the
+  USB host track). Host keys are generated on first boot.
+- **Change the password after first boot**: \`passwd\` and \`passwd root\`.
+  Dispatch the workflow with your own values instead of the defaults.
+
 ## Install (NEVER \`fastboot flash\`)
 1. Restore the rootfs tar to /dev/sda36 as root with busybox/GNU tar:
    \`tar --numeric-owner -xzpPf rootfs-*.tar.gz -C /mnt/sda36\` after excluding

@@ -13,6 +13,17 @@
 set -euo pipefail
 source "$(dirname "$0")/common.sh"
 
+# Workflow passes credentials base64-encoded so any characters in the
+# password survive shell quoting. Decode here; never echo the values.
+if [[ -n ${DADA_USER_B64:-} ]]; then
+    DADA_USER=$(printf '%s' "$DADA_USER_B64" | base64 -d)
+    export DADA_USER
+fi
+if [[ -n ${DADA_PASSWORD_B64:-} ]]; then
+    DADA_PASSWORD=$(printf '%s' "$DADA_PASSWORD_B64" | base64 -d)
+    export DADA_PASSWORD
+fi
+
 # Surface the real failing line as a GitHub annotation. The job page only
 # shows the bare step exit code and the Actions API is unavailable here.
 trap 'rc=$?; printf "::error::chroot-build.sh failed at line %s (exit %s): %s\n" "$LINENO" "$rc" "$BASH_COMMAND" >&2' ERR
@@ -62,6 +73,7 @@ apt-get install -y --no-install-recommends \
     libpolkit-gobject-1-dev polkitd valac libudev-dev libjson-c-dev \
     systemd kmod udev dbus systemd-sysv \
     libsystemd-dev libgirepository-2.0-dev \
+    openssh-server sudo adduser passwd \
     file tar xz-utils ca-certificates
 info "dependencies installed"
 log "toolchain versions"
@@ -202,10 +214,40 @@ meson test -C "$SRC/hexagonrpc/build" --print-errorlogs || warn "hexagonrpc test
 info "static verification passed"
 
 # Enable, never start, inside the build chroot.
-systemctl --root=/ enable hexagonrpcd-sensors.service iio-sensor-proxy.service
+systemctl --root=/ enable hexagonrpcd-sensors.service iio-sensor-proxy.service \
+                         ssh.service
 : > /etc/machine-id
+# Host keys are generated on first boot by ssh.service (ssh-keygen -A via
+# systemd unit / sshd init); do not ship pre-generated keys in a public image.
 rm -f /etc/ssh/ssh_host_* 2>/dev/null || true
 printf 'dada\n' > /etc/hostname
+
+# ---------------------------------------------------------------- accounts
+# mmdebstrap minbase leaves root LOCKED and creates no normal user, so the
+# shipped rootfs was otherwise impossible to log into. Both the normal user
+# and root get the password supplied by the workflow dispatch inputs.
+DADA_USER=${DADA_USER:-dada}
+DADA_PASSWORD=${DADA_PASSWORD:-123456}
+log "accounts: create '$DADA_USER', set password for user + root"
+# Never echo the password into the build log. Create only groups that a
+# minbase + the packages above are known to provide; useradd fails outright
+# if any -G group is missing.
+for g in sudo adm dialout audio video input systemd-journal; do
+    getent group "$g" >/dev/null 2>&1 || groupadd "$g" 2>/dev/null || true
+done
+if ! id "$DADA_USER" >/dev/null 2>&1; then
+    useradd -m -s /bin/bash -G sudo,adm,dialout,audio,video,input,systemd-journal "$DADA_USER"
+fi
+printf '%s:%s\n' "$DADA_USER" "$DADA_PASSWORD" | chpasswd
+printf 'root:%s\n'        "$DADA_PASSWORD" | chpasswd
+# Allow password-based SSH for root (WiFi SSH is the only remote channel now
+# that the gadget serial console is gone); the user can harden this later.
+mkdir -p /etc/ssh/sshd_config.d
+cat > /etc/ssh/sshd_config.d/10-dada.conf <<'EOF'
+PermitRootLogin yes
+PasswordAuthentication yes
+EOF
+info "accounts configured (user='$DADA_USER', root password synced)"
 
 # ---------------------------------------------------------------- artifacts (before cleanup!)
 log "collect artifacts into $OUT"

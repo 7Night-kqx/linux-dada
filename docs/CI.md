@@ -63,9 +63,13 @@ actions/checkout (主仓 + linux submodule)
 
 ## 触发
 
-- `workflow_dispatch`（可勾 `publish` 生成 Release）
+- `workflow_dispatch`，参数：
+  - `username`：rootfs 里的普通用户名，默认 `dada`
+  - `password`：**普通用户与 root 共用**的密码，默认 `123456`
+  - `publish`：是否额外生成 Release
 - `push` 到 `main` / `dev` 且路径命中（`.github/ config/ scripts/
-  Softs/patches/ Softs/sensors/ tools/ firmware/ linux`）
+  Softs/patches/ Softs/sensors/ tools/ firmware/ linux`）——非 dispatch 事件用
+  上述默认账号密码
 - `push` tag `v*` → 额外跑 release job
 - PR 到 `dev` → 只跑 build
 
@@ -118,6 +122,19 @@ rootfs.tar.gz 与传感器服务包。
 
 需要 USB gadget 控制台（黑屏抓 dmesg）时，需另起一条 usbdebug 轨，把以上
 三处整体反向切换，不能用本镜像。
+
+## 登录
+
+rootfs 自带 `openssh-server`（开机自启）、普通用户和 root 密码：
+
+| 项 | 值 |
+|---|---|
+| 普通用户 | `workflow_dispatch` 的 `username`，默认 `dada` |
+| 密码 | `password` 参数，默认 `123456`，**普通用户与 root 相同** |
+| SSH | `ssh dada@<设备IP>` / `ssh root@<设备IP>`，允许密码登录与 root 登录 |
+
+host key 首次启动生成。**首次登录后立刻 `passwd` 改密码**（默认值写在公开仓里）。
+控制台仍是 `console=tty0`；host 轨没有 `/dev/ttyGS0`，WiFi SSH 是主要远程通道。
 
 ## 上机验收（照 `docs/sensor-fix.md` 验收 B）
 

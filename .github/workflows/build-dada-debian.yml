@@ -7,6 +7,14 @@ name: build-dada-debian
 on:
   workflow_dispatch:
     inputs:
+      username:
+        description: 'Normal user created in the rootfs (also the SSH login)'
+        type: string
+        default: dada
+      password:
+        description: 'Password for the normal user AND root (change it after first boot)'
+        type: string
+        default: '123456'
       publish:
         description: 'Create a GitHub Release from the artifacts'
         type: boolean
@@ -134,7 +142,12 @@ jobs:
           sudo mkdir -p out-stage
           set +e
           set -o pipefail
-          sudo chroot rootfs /bin/bash -lc 'cd /ci && ./chroot-build.sh' 2>&1 \
+          # Base64 keeps arbitrary password characters out of shell quoting
+          # (the encoded value only contains [A-Za-z0-9+/=]).
+          U_B64=$(printf '%s' "${{ inputs.username || 'dada' }}" | base64 -w0)
+          P_B64=$(printf '%s' "${{ inputs.password || '123456' }}" | base64 -w0)
+          sudo env DADA_USER_B64="$U_B64" DADA_PASSWORD_B64="$P_B64" \
+            chroot rootfs /bin/bash -lc 'cd /ci && ./chroot-build.sh' 2>&1 \
             | sudo tee out-stage/chroot-build.log
           RC=$?
           set +o pipefail
