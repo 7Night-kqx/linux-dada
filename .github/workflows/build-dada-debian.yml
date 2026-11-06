@@ -127,17 +127,31 @@ jobs:
           ls -la rootfs 2>/dev/null | head -20 || true
           df -h "$GITHUB_WORKSPACE"
 
-      - name: Upload diagnostics
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: dada-diagnostics-${{ github.run_id }}
-          path: out-stage/*.log
-          retention-days: 7
-          if-no-files-found: warn
-
       - name: chroot — build kernel, modules and sensor services
-        run: sudo chroot rootfs /bin/bash -lc 'cd /ci && ./chroot-build.sh'
+        run: |
+          # Tee the whole chroot build to a host-visible log so a failure can
+          # be diagnosed from the artifact even when the step aborts.
+          sudo mkdir -p out-stage
+          set +e
+          set -o pipefail
+          sudo chroot rootfs /bin/bash -lc 'cd /ci && ./chroot-build.sh' 2>&1 \
+            | sudo tee out-stage/chroot-build.log
+          RC=$?
+          set +o pipefail
+          set -e
+          echo "=== chroot-build tail (last 150 lines) ==="
+          tail -150 out-stage/chroot-build.log
+          exit "$RC"
+
+      - name: Diagnostics — chroot build log
+        if: always()
+        run: |
+          L=out-stage/chroot-build.log
+          if [ -f "$L" ]; then
+            echo "=== chroot-build.log (last 200 lines) ==="
+            tail -200 "$L"
+            { echo '```'; tail -200 "$L"; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
+          fi
 
       - name: chroot — purge build-time code and objects
         run: sudo chroot rootfs /bin/bash -lc 'cd /ci && ./chroot-cleanup.sh'
@@ -152,6 +166,15 @@ jobs:
           path: out/
           retention-days: 14
           if-no-files-found: error
+
+      - name: Upload diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: dada-diagnostics-${{ github.run_id }}
+          path: out-stage/*.log
+          retention-days: 7
+          if-no-files-found: warn
 
   release:
     needs: build
