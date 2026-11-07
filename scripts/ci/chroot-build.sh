@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Executed INSIDE the Debian trixie/arm64 chroot.
+# Executed INSIDE the Debian sid/arm64 chroot.
 # Everything here uses the rootfs' own toolchain (native aarch64, no
 # CROSS_COMPILE). Layout inside the chroot:
 #   /workspace/linux          kernel submodule copy
@@ -43,7 +43,7 @@ log "toolchain (native arm64, no CROSS_COMPILE)"
 # compiler yet, calling them here would fail with exit code 127.
 
 # ---------------------------------------------------------------- dependencies
-log "apt: build + runtime dependencies (Debian trixie names)"
+log "apt: build + runtime dependencies (Debian sid names)"
 export DEBIAN_FRONTEND=noninteractive
 # Keep /etc/apt/sources.list AS THE SINGLE SOURCE. mmdebstrap wrote it as a
 # one-line entry pointing at the TUNA mirror (from $MIRROR); an earlier
@@ -64,7 +64,7 @@ apt-get install -y --no-install-recommends \
     libsystemd-dev libgirepository-2.0-dev \
     openssh-server sudo adduser passwd \
     qrtr-tools zstd \
-    network-manager wpasupplicant iproute2 isc-dhcp-client \
+    network-manager wpasupplicant iproute2 \
     net-tools iputils-ping wireless-tools rfkill iw \
     vim fastfetch btop systemd-timesyncd tzdata \
     libdrm-dev libwayland-dev wayland-protocols libwayland-egl-backend-dev \
@@ -362,6 +362,29 @@ EOF
 install -d -m 0755 /run/sshd
 /usr/sbin/sshd -t || die "sshd -t failed (ssh.service would not start)"
 info "accounts configured (user='$DADA_USER', root password synced); sshd -t OK"
+
+# ---------------------------------------------------------------- GNOME 51 desktop
+# Debian sid ships GNOME 51 (gnome-core 1:51+2 / gnome-shell 51.0-3).
+# Install it LAST so pulling in a large desktop dependency set cannot change
+# the toolchain used above for kernel / sensor / Mesa builds.
+log "desktop: apt install gnome-core (GNOME 51) + GDM autologin"
+apt-get install -y --no-install-recommends \
+    gnome-core libnss-systemd systemd-userdbd
+# GDM needs the greeter/session user lookups; make sure the display manager
+# is the enabled one and the boot target is graphical.
+systemctl --root=/ enable gdm3.service || true
+systemctl --root=/ set-default graphical.target || true
+# Autologin as the workflow-supplied username (default dada). Debian's GDM
+# package uses sysconfsubdir=gdm3 -> /etc/gdm3/daemon.conf.
+install -d /etc/gdm3
+cat > /etc/gdm3/daemon.conf <<EOF
+[daemon]
+AutomaticLoginEnable = true
+AutomaticLogin = $DADA_USER
+EOF
+grep -q "AutomaticLogin = $DADA_USER" /etc/gdm3/daemon.conf \
+    || die "GDM autologin config failed"
+info "GNOME 51 installed; GDM autologin enabled for '$DADA_USER'"
 
 # ---------------------------------------------------------------- artifacts (before cleanup!)
 log "collect artifacts into $OUT"

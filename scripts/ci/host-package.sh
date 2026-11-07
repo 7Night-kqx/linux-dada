@@ -24,7 +24,7 @@ log "package rootfs (cleaned)"
 [[ ! -e "$ROOTFS/workspace" ]] || die "/workspace survived cleanup"
 [[ ! -e "$ROOTFS/usr/bin/gcc" ]] || die "gcc survived cleanup"
 KREL=$(cat "$OUT/kernel.release" 2>/dev/null || echo unknown)
-TARBALL=rootfs-debian13-dada-$KREL.tar.gz
+TARBALL=rootfs-debian-sid-dada-$KREL.tar.gz
 # Trailing "." is mandatory (docs/rootfs-backup-restore.md: "tar: empty archive").
 sudo tar --numeric-owner -czf "$OUT/$TARBALL" -C "$ROOTFS" \
     --exclude='./proc/*' --exclude='./sys/*' --exclude='./dev/*' \
@@ -73,15 +73,24 @@ log "RELEASE_NOTES.md"
 cat > "$OUT/RELEASE_NOTES.md" <<EOF
 # dada Debian build $KREL
 
-Native aarch64 build. Kernel, modules and userspace sensor services were all
-built INSIDE the shipped rootfs via chroot; build-time code and objects were
-purged before packaging.
+Native aarch64 build on **Debian sid** (required for GNOME 51; trixie only has
+GNOME 48). Kernel, modules, Mesa A830 drivers and userspace sensor services
+were all built INSIDE the shipped rootfs via chroot; build-time code and
+objects were purged before packaging.
+
+## Desktop
+- GNOME 51 (\`gnome-core 1:51+2\`, \`gnome-shell 51.0-3\`, GDM 51.1) installed
+  from Debian sid packages (no source builds).
+- **GDM autologin** is enabled for the workflow \`username\` (default **dada**)
+  via \`/etc/gdm3/daemon.conf\`; default boot target is graphical.
+- Mesa A830 (freedreno/turnip) in \`/opt/mesa-a830\` is wired into the session
+  via \`/etc/environment.d/\`, profile.d and gdm drop-ins.
 
 ## Artifacts
 - \`Image-dada-debian\` — kernel image (built-in DTB, ARM64_BUILTIN_DTB_FORCE)
 - \`boot-dada-debian-test.img\` — \`fastboot boot\` verification image
 - \`final.config\` / \`dts-snapshot.dts\` — reproducibility inputs
-- \`rootfs-debian13-dada-$KREL.tar.gz\` — cleaned Debian 13 trixie rootfs
+- \`rootfs-debian-sid-dada-$KREL.tar.gz\` — cleaned Debian sid rootfs with GNOME 51
 - \`provenance.json\` / \`SHA256SUMS\` — SHA pins and hashes
 
 ## Provenance

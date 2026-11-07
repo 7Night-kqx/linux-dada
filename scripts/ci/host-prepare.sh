@@ -9,7 +9,7 @@ source "$(dirname "$0")/common.sh"
 REPO=${REPO:-$(git rev-parse --show-toplevel)}
 ROOTFS=${ROOTFS:-$REPO/rootfs}
 WS=$ROOTFS/workspace
-SUITE=${SUITE:-trixie}
+SUITE=${SUITE:-sid}
 MIRROR=${MIRROR:-https://mirrors.tuna.tsinghua.edu.cn/debian}
 
 need mmdebstrap
@@ -26,7 +26,7 @@ sudo rm -rf "$ROOTFS"
 MM_LOG=$REPO/out-stage/mmdebstrap.log
 sudo mkdir -p "$REPO/out-stage"
 # On an Ubuntu runner the host apt does NOT trust Debian's archive key, so
-# mmdebstrap's internal apt fails to verify trixie/InRelease and exits 25.
+# mmdebstrap's internal apt fails to verify sid/InRelease and exits 25.
 # --keyring points the build-time apt at the Debian keyring installed by the
 # workflow; --include=debian-archive-keyring puts that key INTO the generated
 # rootfs so chroot apt (used later to install build deps) can verify too.

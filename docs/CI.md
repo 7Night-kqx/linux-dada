@@ -1,4 +1,4 @@
-# dada GitHub Actions CI — Debian 13 rootfs + sensor services
+# dada GitHub Actions CI — Debian sid + GNOME 51 rootfs + sensor services
 
 > 本文提到的 `docs/sensor-fix.md`、`docs/rootfs-backup-restore.md`、
 > `docs/modem-rootfs-restore-2026-11-05.md` 等属外部参考仓库
@@ -10,17 +10,19 @@
 
 ```
 actions/checkout (主仓 + linux submodule)
-  └─ mmdebstrap --variant=minbase trixie arm64  → rootfs/
+  └─ mmdebstrap --variant=minbase sid arm64  → rootfs/
        └─ chroot rootfs:
             apt 装构建依赖
             make O=../build-dada-evidence ARCH=arm64 dada_defconfig
             make ... Image dtbs modules
             make ... INSTALL_MOD_PATH=/ modules_install ; depmod -b /
             顺序 meson 构建 hexagonrpc → libssc → iio-sensor-proxy
+            原生编译 Mesa main (freedreno + turnip) → /opt/mesa-a830
+            apt install gnome-core (GNOME 51) + GDM 自动登录
             装固件 + systemd unit + udev 规则
             静态校验 + 收集产物到 /mnt/artifacts
             purge 构建工具/源码/对象, 保护运行时库
-  └─ tar -czf rootfs-debian13-dada-<release>.tar.gz
+  └─ tar -czf rootfs-debian-sid-dada-<release>.tar.gz
   └─ upload-artifact / (tag 时) GitHub Release
 ```
 
@@ -33,7 +35,12 @@ actions/checkout (主仓 + linux submodule)
   不进仓；只把它的逐符号断言保留为 `config/config-assertions.txt`。
 - **rootfs 即编译环境**：内核、模块、用户态服务全部在目标 rootfs 内用其
   自带 gcc/glibc/meson 构建，天然 ABI 一致，满足 `docs/sensor-fix.md`
-  验收 B 的「Debian 13 原生 AArch64 构建」要求。
+  验收 B 的「Debian 原生 AArch64 构建」要求。⚠️ sid 的 gcc 16.2 比 trixie
+  的 gcc 14 新，编 7.3-rc5 内核需注意新编译器兼容问题（实测以 CI 为准）。
+- **用 sid 而非 trixie**：为了 GNOME 51（trixie 只有 GNOME 48，sid 有
+  `gnome-core 1:51+2` / `gnome-shell 51.0-3`）。sid 里 `isc-dhcp-client`
+  已移除，NM 1.58 用内置 DHCP，故 apt 清单不再列它；`wayland-protocols`
+  升到 1.49，Mesa main 要求的 `>=1.49` 直接满足，无需再下载 subproject。
 - **构建后清理**：`chroot-cleanup.sh` 删 `/workspace`（源码/对象）、purge
   构建工具、删 `modules_install` 留下的 `build`/`source` 断链；先根据真实
   `ldd` 结果把运行时库 `apt-mark manual`，避免 `autoremove` 误删 trixie 的
@@ -92,7 +99,7 @@ actions/checkout (主仓 + linux submodule)
 | `boot-dada-debian-test.img` | `fastboot boot` 验证用 |
 | `final.config` / `dts-snapshot.dts` | 可复现输入 |
 | `kernel.release` | 与 `/lib/modules/<release>` 一致 |
-| `rootfs-debian13-dada-<release>.tar.gz` | 清理后的 rootfs |
+| `rootfs-debian-sid-dada-<release>.tar.gz` | 清理后的 Debian sid + GNOME 51 rootfs |
 | `SHA256SUMS` / `provenance.json` / `RELEASE_NOTES.md` | 校验与来源 |
 
 `provenance.json` 记录内核 SHA、3 个 Softs SHA、patch/config/DTS/固件清单的
@@ -142,8 +149,22 @@ rootfs 自带 `openssh-server`（开机自启）、普通用户和 root 密码�
 | 密码 | `password` 参数，默认 `123456`，**普通用户与 root 相同** |
 | SSH | `ssh dada@<设备IP>` / `ssh root@<设备IP>`，允许密码登录与 root 登录 |
 
-host key 首次启动生成。**首次登录后立刻 `passwd` 改密码**（默认值写在公开仓里）。
-控制台仍是 `console=tty0`；host 轨没有 `/dev/ttyGS0`，WiFi SSH 是主要远程通道。
+host key 在构建期生成并保留（见「SSH 服务」）。**首次登录后立刻 `passwd` 改密码**
+（默认值写在公开仓里）。控制台仍是 `console=tty0`；host 轨没有 `/dev/ttyGS0`，
+WiFi SSH 是主要远程通道。
+
+## 桌面（GNOME 51）
+
+- 从 **Debian sid** apt 安装 `gnome-core`（`1:51+2`，`gnome-shell 51.0-3`、
+  `mutter 51.0-3`、`gdm3 51.1`），另装 `libnss-systemd` / `systemd-userdbd`
+  供 GDM 动态 greeter 用户查询。不编源码。
+- `gnome-core` 是元包，会拉全套 GNOME 应用与 PipeWire，rootfs 显著增大。
+- **GDM 自动登录**：`/etc/gdm3/daemon.conf` 写入
+  `AutomaticLoginEnable = true` / `AutomaticLogin = <username>`，用户名跟随
+  `workflow_dispatch` 的 `username`（默认 `dada`）；默认 target 设为
+  `graphical.target`，`gdm3.service` 已 enable。
+- Mesa A830 会话环境已通过 `/etc/environment.d/`、profile.d 与 gdm drop-in
+  注入（`LD_LIBRARY_PATH` / `VK_DRIVER_FILES` 等），GNOME 会话可用 turnip。
 
 ## 网络（普通 WiFi）
 
@@ -208,9 +229,9 @@ Image、外部 dtb 被忽略，所以「只换 dtb」不可行，必须改 DTS �
 ## GPU（Adreno 830 用户态驱动）
 
 内核侧 `drm/msm` + GPU/GMU/GPUCC/Adreno SMMU + `gen80000_*` 固件已随 Image
-构建（见 [README 内核前置条件](Softs/mesa/README.md)），但 Debian trixie 自带
-Mesa 25.0.7 **没有** `0xffff44050001`（A830v1）设备表条目，freedreno/turnip
-会拒绝这块 GPU。
+构建（见 [README 内核前置条件](Softs/mesa/README.md)），但发行版自带 Mesa
+**没有** `0xffff44050001`（A830v1）设备表条目，freedreno/turnip 会拒绝这块
+GPU（sid 自带 Mesa 26.x 也仍缺该条目，故仍需自编 main）。
 
 CI 从 `config/mesa-ref.txt` pin 的 **Mesa upstream main** 源码（上游 commit
 `2061a5ee` 起已含 A830v1 → **无需补丁**）在 chroot 里原生编译：
@@ -221,8 +242,8 @@ CI 从 `config/mesa-ref.txt` pin 的 **Mesa upstream main** 源码（上游 comm
 - `LD_LIBRARY_PATH` 指向 `/opt/mesa-a830/runtime`（无 RPATH，故需软链汇聚
   `libEGL/libGL/libGLESv2/libgbm/libgallium`）
 - 选项集逐项对照 pinned commit 的 `meson.options` 核验过：main 移除了
-  `-Dstrip=true`，改用 `meson install --strip`；meson 要求 `>=1.7.0`，trixie
-  的 1.7.0-1 刚好满足
+  `-Dstrip=true`，改用 `meson install --strip`；meson 要求 `>=1.7.0`，
+  sid 的 1.12.1 满足（trixie 的 1.7.0-1 也刚好满足）
 
 设备上验证过的那份也是 `Mesa 26.3.0-devel`（main 分支），路线一致。
 验证命令见 [Softs/mesa/README.md](Softs/mesa/README.md)。

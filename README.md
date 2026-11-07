@@ -1,7 +1,8 @@
-# linux-dada — CI 构建 Debian 13 rootfs（小米 15 / SM8750 / dada）
+# linux-dada — CI 构建 Debian sid + GNOME 51 rootfs（小米 15 / SM8750 / dada）
 
 从内核源码与用户态服务源码，构建可 `fastboot boot` 的内核镜像、以及自带
-内核模块与传感器软件服务的 Debian 13 (trixie/arm64) 最小 rootfs。
+内核模块、传感器软件服务、Mesa A830 驱动与 GNOME 51 桌面的
+Debian sid (arm64) rootfs（用 sid 是为了 GNOME 51，trixie 只有 GNOME 48）。
 
 本项目**不含内核源码**：`linux/` 是 `7Night-kqx/linux@dada-mainline` 的
 git submodule（pin 见 `config/kernel-ref.txt`）。用户态传感器相关程序与

@@ -42,7 +42,8 @@ permissions:
   contents: read
 
 env:
-  SUITE: trixie
+  # Debian sid is needed for GNOME 51 (trixie only ships GNOME 48).
+  SUITE: sid
   # TUNA mirror: deb.debian.org is slow/unreachable from some runner networks
   # (mmdebstrap's apt returned exit code 25 there). This URL is also written
   # into the generated rootfs' apt sources, so chroot apt uses it too.
