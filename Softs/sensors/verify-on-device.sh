@@ -14,6 +14,14 @@ check "dada-adsp active"            'systemctl is-active --quiet dada-adsp'
 check "hexagonrpcd-sensors active"  'systemctl is-active --quiet hexagonrpcd-sensors'
 check "iio-sensor-proxy active"     'systemctl is-active --quiet iio-sensor-proxy'
 
+echo "=== WiFi / NetworkManager ==="
+check "nmcli present"           'command -v nmcli'
+check "NetworkManager active"   'systemctl is-active --quiet NetworkManager'
+check "wlan interface present"  'ls /sys/class/net | grep -q "^wlan"'
+if command -v nmcli >/dev/null 2>&1; then
+    nmcli -t -f DEVICE,TYPE,STATE device 2>/dev/null | sed 's/^/  /'
+fi
+
 echo "=== hexagonrpc data tree ==="
 printf '  files: %s\n' "$(find /var/lib/hexagonrpc -type f 2>/dev/null | wc -l)"
 check "json.lst present"        'test -f /var/lib/hexagonrpc/sensors/config/json.lst'

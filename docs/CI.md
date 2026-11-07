@@ -145,6 +145,44 @@ rootfs 自带 `openssh-server`（开机自启）、普通用户和 root 密码�
 host key 首次启动生成。**首次登录后立刻 `passwd` 改密码**（默认值写在公开仓里）。
 控制台仍是 `console=tty0`；host 轨没有 `/dev/ttyGS0`，WiFi SSH 是主要远程通道。
 
+## 网络（普通 WiFi）
+
+CI 安装 `network-manager wpasupplicant iproute2 isc-dhcp-client wireless-tools
+rfkill iw` 并 enable `NetworkManager.service`：
+
+```bash
+nmcli device wifi list
+nmcli device wifi connect "<SSID>" password "<PSK>"
+nmcli device status
+```
+
+**基带/modem 暂不纳入**：`modemmanager` 在 Debian 只是 `network-manager` 的
+Recommends，构建用 `--no-install-recommends` 所以不会安装；只有客户端库
+`libmm-glib0` 会作为 NM 的硬依赖被带上（纯库，不启动任何服务）。蜂窝数据需要
+`dada-modem.service` / `tqftpserv` / `rmtfs` / RPMB 许可等一整套，另立阶段。
+
+## GPU（Adreno 830 用户态驱动）
+
+内核侧 `drm/msm` + GPU/GMU/GPUCC/Adreno SMMU + `gen80000_*` 固件已随 Image
+构建（见 [README 内核前置条件](Softs/mesa/README.md)），但 Debian trixie 自带
+Mesa 25.0.7 **没有** `0xffff44050001`（A830v1）设备表条目，freedreno/turnip
+会拒绝这块 GPU。
+
+CI 从 `config/mesa-ref.txt` pin 的 **Mesa upstream main** 源码（上游 commit
+`2061a5ee` 起已含 A830v1 → **无需补丁**）在 chroot 里原生编译：
+
+- `freedreno`（GL/EGL/GBM）+ `turnip`（Vulkan），装到 `/opt/mesa-a830`
+- 会话环境写入 `/etc/environment`、`/etc/environment.d/50-mesa-a830.conf`、
+  `/etc/profile.d/mesa-a830.sh`、gdm/gdm3 drop-in
+- `LD_LIBRARY_PATH` 指向 `/opt/mesa-a830/runtime`（无 RPATH，故需软链汇聚
+  `libEGL/libGL/libGLESv2/libgbm/libgallium`）
+- 选项集逐项对照 pinned commit 的 `meson.options` 核验过：main 移除了
+  `-Dstrip=true`，改用 `meson install --strip`；meson 要求 `>=1.7.0`，trixie
+  的 1.7.0-1 刚好满足
+
+设备上验证过的那份也是 `Mesa 26.3.0-devel`（main 分支），路线一致。
+验证命令见 [Softs/mesa/README.md](Softs/mesa/README.md)。
+
 ## 上机验收（照 `docs/sensor-fix.md` 验收 B）
 
 ```bash

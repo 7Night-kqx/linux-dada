@@ -134,4 +134,20 @@ for p in hexagonrpc/sensors/config/json.lst hexagonrpc/sensors/sns_reg.conf \
 done
 info "data archive OK ($n entries, $(du -h "$DATA" | cut -f1))"
 
+log "10. mesa A830 assets"
+MESA_SHA=$(grep -v '^#' config/mesa-ref.txt | tr -d '[:space:]')
+[[ $MESA_SHA =~ ^[0-9a-f]{40}$ ]] || die "bad Mesa SHA in config/mesa-ref.txt"
+for f in Softs/mesa/scripts/chroot-mesa.sh Softs/mesa/scripts/scan-a830.py \
+         Softs/mesa/scripts/vk-probe.py Softs/mesa/env/50-mesa-a830.conf \
+         Softs/mesa/env/mesa-a830.env Softs/mesa/env/mesa-a830.sh; do
+    [[ -s $f ]] || die "missing: $f"
+done
+# The CI meson option set must not use options removed from mesa main.
+# Only match an actual meson argument line (not the explanatory comment).
+grep -qE '^[[:space:]]+-Dstrip=' Softs/mesa/scripts/chroot-mesa.sh \
+    && die "-Dstrip was removed in Mesa main (use meson install --strip)"
+grep -q '0xffff44050001' Softs/mesa/scripts/chroot-mesa.sh \
+    || die "chroot-mesa.sh lost its A830v1 chip-id sanity check"
+info "mesa assets OK (pin ${MESA_SHA:0:12})"
+
 log "DRY-RUN PASS"

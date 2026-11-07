@@ -1,0 +1,33 @@
+From 2061a5ee6184e465eafb87cf465aed92c04f1a41 Mon Sep 17 00:00:00 2001
+From: Lakshman Chandu Kondreddy <lkondred@qti.qualcomm.com>
+Date: Thu, 13 Aug 2026 20:14:20 +0530
+Subject: [PATCH] freedreno: Add chip-id support for A830v1
+
+Upstream: https://gitlab.freedesktop.org/mesa/mesa/-/commit/2061a5ee6184e465eafb87cf465aed92c04f1a41
+(merged to mesa main on 2026-08-19, NOT in the 26.0 / 26.1 / 26.2 branches)
+
+Mainline DRM (msm) reports the Adreno 830 in SM8750 phones as chip id
+0x44050001 -- the "v1" variant -- while Mesa's device table only carried
+0xffff44050000.  Without this entry dev_id_compare() finds no match and
+turnip/freedreno refuse the GPU.
+
+Xiaomi 15 "dada" (SM8750) reports exactly 0x44050001: its stock device
+tree has qcom,chipid = <0x44050001> and qcom,gpu-model = "Adreno830v2".
+
+The 0xffff in bits 47..32 is Mesa's WILDCARD_FUSE_ID (freedreno_dev_info.c),
+i.e. "match any speedbin/fuse value the kernel may report".
+---
+ src/freedreno/common/freedreno_devices.py | 1 +
+ 1 file changed, 1 insertion(+)
+
+diff --git a/src/freedreno/common/freedreno_devices.py b/src/freedreno/common/freedreno_devices.py
+--- a/src/freedreno/common/freedreno_devices.py
++++ b/src/freedreno/common/freedreno_devices.py
+@@ -1382,6 +1382,7 @@ add_gpus([
+ 
+ add_gpus([
+         GPUId(chip_id=0xffff44050000, name="Adreno (TM) 830"),
++        GPUId(chip_id=0xffff44050001, name="Adreno (TM) 830v1"),
+         GPUId(chip_id=0x44050001, name="Adreno (TM) 830"), # KGSL
+     ], A6xxGPUInfo(
+         CHIP.A8XX,

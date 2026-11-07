@@ -75,6 +75,15 @@ apt-get install -y --no-install-recommends \
     libsystemd-dev libgirepository-2.0-dev \
     openssh-server sudo adduser passwd \
     qrtr-tools zstd \
+    network-manager wpasupplicant iproute2 isc-dhcp-client \
+    wireless-tools rfkill iw \
+    libdrm-dev libwayland-dev wayland-protocols libwayland-egl-backend-dev \
+    libx11-dev libxext-dev libxfixes-dev libxcb1-dev libx11-xcb-dev \
+    libxcb-dri2-0-dev libxcb-dri3-dev libxcb-present-dev libxcb-sync-dev \
+    libxcb-glx0-dev libxshmfence-dev libxrandr-dev libxdamage-dev \
+    libxxf86vm-dev libxrender-dev libexpat1-dev libzstd-dev \
+    libglvnd-dev libgbm-dev libvulkan-dev glslang-tools \
+    python3-mako python3-ply zlib1g-dev libxml2-dev \
     file tar xz-utils ca-certificates
 info "dependencies installed"
 log "toolchain versions"
@@ -167,6 +176,34 @@ rm -f /usr/lib/systemd/system/hexagonrpcd-adsp-sensorspd.service \
       /usr/lib/systemd/system/hexagonrpcd-adsp-rootpd.service \
       /usr/lib/systemd/system/hexagonrpcd-sdsp.service
 
+# ---------------------------------------------------------------- Mesa (A830 GPU)
+log "clone pinned Mesa main ($CONFIG/mesa-ref.txt)"
+MESA_SHA=$(grep -v '^#' "$CONFIG/mesa-ref.txt" | tr -d '[:space:]')
+[[ $MESA_SHA =~ ^[0-9a-f]{40}$ ]] || die "bad Mesa SHA in mesa-ref.txt: $MESA_SHA"
+MESA_SRC=$WS/Softs/mesa-src
+# Shallow fetch of exactly the pinned commit. A --filter=blob:none clone would
+# lazily pull blobs during meson setup (slow / fragile in CI); depth-1 fetch
+# by SHA is supported by GitLab and gives a complete tree.
+mkdir -p "$MESA_SRC"
+git -C "$MESA_SRC" init --quiet
+git -C "$MESA_SRC" remote add origin https://gitlab.freedesktop.org/mesa/mesa.git
+git -C "$MESA_SRC" fetch --quiet --depth 1 origin "$MESA_SHA"
+git -C "$MESA_SRC" checkout --quiet FETCH_HEAD
+[[ $(git -C "$MESA_SRC" rev-parse HEAD) == "$MESA_SHA" ]] \
+    || die "Mesa HEAD != pinned $MESA_SHA"
+grep -q '0xffff44050001' "$MESA_SRC/src/freedreno/common/freedreno_devices.py" \
+    || die "pinned Mesa lacks the A830v1 chip id"
+info "mesa @ ${MESA_SHA:0:12} (A830v1 chip id present, no patch needed)"
+
+log "build Mesa (freedreno GL + turnip Vulkan, native aarch64)"
+MESA_SCRIPTS=$WS/Softs/mesa/scripts
+cp "$MESA_SCRIPTS/chroot-mesa.sh" /ci/chroot-mesa.sh
+chmod +x /ci/chroot-mesa.sh
+# chroot-mesa.sh sources /ci/common.sh and reads scan-a830.py / env from the
+# staged Softs/mesa tree, so keep those paths stable.
+MESA_SRC="$MESA_SRC" JOBS="$JOBS" bash /ci/chroot-mesa.sh
+info "Mesa A830 drivers installed to /opt/mesa-a830"
+
 # ---------------------------------------------------------------- deployment
 log "install firmware + deployment units"
 install -d /lib/firmware
@@ -231,7 +268,8 @@ meson test -C "$SRC/hexagonrpc/build" --print-errorlogs || warn "hexagonrpc test
 info "static verification passed"
 
 # Enable, never start, inside the build chroot.
-systemctl --root=/ enable qrtr-ns.service dada-adsp.service \
+systemctl --root=/ enable NetworkManager.service \
+                         qrtr-ns.service dada-adsp.service \
                          hexagonrpcd-sensors.service iio-sensor-proxy.service \
                          ssh.service
 : > /etc/machine-id

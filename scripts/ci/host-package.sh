@@ -99,6 +99,25 @@ purged before packaging.
 - **Change the password after first boot**: \`passwd\` and \`passwd root\`.
   Dispatch the workflow with your own values instead of the defaults.
 
+## WiFi
+- \`network-manager\` + \`wpa_supplicant\` + \`iproute2\` + \`iw\`/\`rfkill\` are
+  installed and NetworkManager.service is enabled.
+- \`nmcli device wifi list\` / \`nmcli device wifi connect "<SSID>" password "<PSK>"\`.
+- ModemManager is NOT installed (only its client library comes in as an NM
+  dependency); cellular/modem bring-up is out of scope for this build.
+
+## GPU (Adreno 830)
+- Mesa is built from pinned upstream main (already contains the A830v1 chip
+  id, no patch needed): freedreno GL/EGL/GBM + turnip Vulkan, installed to
+  \`/opt/mesa-a830\`. Debian's own Mesa 25.x cannot drive this GPU.
+- Session env is set in \`/etc/environment\`, \`/etc/environment.d/\`,
+  \`/etc/profile.d/mesa-a830.sh\` and gdm drop-ins, so desktop sessions pick
+  up \`LD_LIBRARY_PATH\` / \`VK_DRIVER_FILES\` automatically.
+- Verify: \`ls /dev/dri/\` (card0 + renderD128), and
+  \`VK_DRIVER_FILES=/opt/mesa-a830/share/vulkan/icd.d/freedreno_icd.aarch64.json vulkaninfo\`.
+- Kernel side (drm/msm + GPU/GMU DT + gen80000 firmware) is already in the
+  Image.
+
 ## Install (NEVER \`fastboot flash\`)
 1. Restore the rootfs tar to /dev/sda36 as root with busybox/GNU tar:
    \`tar --numeric-owner -xzpPf rootfs-*.tar.gz -C /mnt/sda36\` after excluding

@@ -48,6 +48,6 @@ NOTE: /var/lib/hexagonrpc contains per-device factory calibration /
 NOTE
 
 systemctl daemon-reload
-systemctl enable --now qrtr-ns.service dada-adsp.service \
+systemctl enable --now NetworkManager.service qrtr-ns.service dada-adsp.service \
                        hexagonrpcd-sensors.service iio-sensor-proxy.service
 echo "Run /opt/dada-sensors/bin/verify-on-device.sh to check the stack."
