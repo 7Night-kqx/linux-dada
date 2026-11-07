@@ -83,7 +83,8 @@ apt-get install -y --no-install-recommends \
     libxcb-glx0-dev libxshmfence-dev libxrandr-dev libxdamage-dev \
     libxxf86vm-dev libxrender-dev libexpat1-dev libzstd-dev \
     libglvnd-dev libgbm-dev libvulkan-dev glslang-tools \
-    python3-mako python3-ply zlib1g-dev libxml2-dev \
+    python3-mako python3-ply python3-yaml python3-packaging \
+    zlib1g-dev libxml2-dev \
     file tar xz-utils ca-certificates
 info "dependencies installed"
 log "toolchain versions"
