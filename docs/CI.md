@@ -44,8 +44,17 @@ actions/checkout (主仓 + linux submodule)
   - 主仓 `firmware/`（727 文件 / 216MB，含 60 个 `adsp*`）= 运行时固件，
     workflow 拷进 `rootfs:/lib/firmware/`。`CONFIG_ATH12K=m` /
     `CONFIG_QCOM_Q6V5_PAS=m` 的固件由此提供。
-- **设备私有数据不进镜像**：`/var/lib/hexagonrpc/` 数据树由
-  `install-on-device.sh` 在真机从 Android 侧提取；CI 只建空骨架。
+- **`/var/lib/hexagonrpc/` 数据树现在随镜像发布**：从可用的 dada 设备
+  （192.168.2.222）整棵提取，压成 `Softs/sensors/data/hexagonrpc.tar.zst`
+  （34MB / 1225 条目 / 解包 102MB），CI 在 chroot 里解到 `/var/lib/`。
+  没有它 SSC sensor PD 枚举不出任何传感器（`ssccli` 能启动但读不到数）。
+  ⚠️ 这是**每台设备私有**的出厂标定 / registry / 高通 DSP 二进制，且仓库为
+  **public**：合规风险由用户承担；换设备必须替换成该机自己的副本。
+  `install-on-device.sh` 保留提取映射说明，但不再要求手工灌数据。
+- **QRTR / ADSP 启动链**：设备验证过的 `qrtr-ns.service`（`qrtr-tools` 包名服务）
+  和 `dada-adsp.service`（`modprobe qcom_q6v5_pas` + 起 remoteproc0）已随
+  chroot 安装并 enable；缺前者 libssc 找不到 ADSP 上的 SSC 服务，缺后者
+  `/dev/fastrpc-adsp-secure` 不出现。
 
 ## 目录
 

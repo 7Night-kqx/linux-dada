@@ -74,6 +74,7 @@ apt-get install -y --no-install-recommends \
     systemd kmod udev dbus systemd-sysv \
     libsystemd-dev libgirepository-2.0-dev \
     openssh-server sudo adduser passwd \
+    qrtr-tools zstd \
     file tar xz-utils ca-certificates
 info "dependencies installed"
 log "toolchain versions"
@@ -178,17 +179,33 @@ rm -rf /lib/firmware/qcom/sm8750/backup-mine
 info "runtime firmware installed (60 adsp files)"
 
 install -d /usr/lib/systemd/system /etc/systemd/system/iio-sensor-proxy.service.d \
-          /etc/modules-load.d /usr/lib/udev/rules.d /var/lib/hexagonrpc \
-          /opt/dada-sensors/bin
+          /etc/modules-load.d /usr/lib/udev/rules.d /etc/udev/rules.d \
+          /var/lib/hexagonrpc /opt/dada-sensors/bin
 install -m644 "$DEPLOY/hexagonrpcd-sensors.service" /usr/lib/systemd/system/
 install -m644 "$DEPLOY/ssc.conf" /etc/systemd/system/iio-sensor-proxy.service.d/
+# The working device ships the udev rule in /etc/udev/rules.d/; put it there
+# too (both paths are scanned, but matching the verified layout avoids doubt).
 install -m644 "$DEPLOY/80-iio-sensor-proxy.rules" /usr/lib/udev/rules.d/
+install -m644 "$DEPLOY/80-iio-sensor-proxy.rules" /etc/udev/rules.d/
 install -m644 "$DEPLOY/00-adsp.conf" /etc/modules-load.d/
+# Device-verified services that were missing from the CI image:
+#   qrtr-ns     -> QRTR/QMI name service (libssc cannot find ADSP without it)
+#   dada-adsp   -> loads qcom_q6v5_pas and starts remoteproc0 (ADSP)
+install -m644 "$DEPLOY/qrtr-ns.service" /usr/lib/systemd/system/
+install -m644 "$DEPLOY/dada-adsp.service" /etc/systemd/system/
 install -m755 "$DEPLOY/install-on-device.sh" /opt/dada-sensors/bin/
 install -m755 "$DEPLOY/verify-on-device.sh" /opt/dada-sensors/bin/
-# Skeleton only. The Android-extracted data tree is injected on-device.
-mkdir -p /var/lib/hexagonrpc/{acdb,dsp/adsp,dsp/cdsp,sensors/config,sensors/state/registry}
-touch /var/lib/hexagonrpc/sensors/sns_reg.conf
+
+# Full /var/lib/hexagonrpc data tree extracted from the working device.
+# Without acdb/ dsp/ sensors/config/ sensors/state/ the SSC sensor PD
+# cannot enumerate any sensor, even though ssccli itself starts fine.
+DATA=$DEPLOY/data/hexagonrpc.tar.zst
+[[ -s $DATA ]] || die "sensor data archive missing: $DATA"
+tar -I zstd -xf "$DATA" -C /var/lib
+[[ -f /var/lib/hexagonrpc/sensors/config/json.lst ]] || die "json.lst missing after unpack"
+[[ -f /var/lib/hexagonrpc/sensors/sns_reg.conf ]]   || die "sns_reg.conf missing after unpack"
+[[ -d /var/lib/hexagonrpc/sensors/state/registry ]] || die "registry missing after unpack"
+info "hexagonrpc data tree installed ($(find /var/lib/hexagonrpc -type f | wc -l) files)"
 
 # Verify the shipped udev rules carry all three SSC tags (patch correctness).
 for tag in ssc-light ssc-accel ssc-compass; do
@@ -214,7 +231,8 @@ meson test -C "$SRC/hexagonrpc/build" --print-errorlogs || warn "hexagonrpc test
 info "static verification passed"
 
 # Enable, never start, inside the build chroot.
-systemctl --root=/ enable hexagonrpcd-sensors.service iio-sensor-proxy.service \
+systemctl --root=/ enable qrtr-ns.service dada-adsp.service \
+                         hexagonrpcd-sensors.service iio-sensor-proxy.service \
                          ssh.service
 : > /etc/machine-id
 # Host keys are generated on first boot by ssh.service (ssh-keygen -A via

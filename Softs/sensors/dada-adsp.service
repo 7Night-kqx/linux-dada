@@ -1,0 +1,15 @@
+[Unit]
+Description=Start Qualcomm ADSP remoteproc (audio + sensors)
+After=systemd-modules-load.service
+Before=hexagonrpcd-sensors.service sound.target
+Wants=systemd-modules-load.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStartPre=/sbin/modprobe qcom_q6v5_pas
+ExecStart=/bin/sh -c "echo start > /sys/class/remoteproc/remoteproc0/state"
+TimeoutStartSec=60
+
+[Install]
+WantedBy=multi-user.target

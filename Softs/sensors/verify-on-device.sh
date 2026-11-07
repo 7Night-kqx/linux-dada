@@ -8,9 +8,17 @@ fail=0
 check() { if eval "$2" >/dev/null 2>&1; then printf '  ok   %s\n' "$1"; else printf '  FAIL %s\n' "$1"; fail=1; fi; }
 
 echo "=== services ==="
-systemctl status --no-pager hexagonrpcd-sensors iio-sensor-proxy 2>&1 | sed 's/^/  /'
+systemctl status --no-pager qrtr-ns dada-adsp hexagonrpcd-sensors iio-sensor-proxy 2>&1 | sed 's/^/  /'
+check "qrtr-ns active"              'systemctl is-active --quiet qrtr-ns'
+check "dada-adsp active"            'systemctl is-active --quiet dada-adsp'
 check "hexagonrpcd-sensors active"  'systemctl is-active --quiet hexagonrpcd-sensors'
 check "iio-sensor-proxy active"     'systemctl is-active --quiet iio-sensor-proxy'
+
+echo "=== hexagonrpc data tree ==="
+printf '  files: %s\n' "$(find /var/lib/hexagonrpc -type f 2>/dev/null | wc -l)"
+check "json.lst present"        'test -f /var/lib/hexagonrpc/sensors/config/json.lst'
+check "registry present"        'test -d /var/lib/hexagonrpc/sensors/state/registry'
+check "socinfo symlink"         'test -L /var/lib/hexagonrpc/socinfo'
 
 echo "=== ADSP / QRTR / fastrpc ==="
 check "fastrpc-adsp-secure present" 'test -e /dev/fastrpc-adsp-secure'

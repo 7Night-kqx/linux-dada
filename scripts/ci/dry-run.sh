@@ -106,11 +106,32 @@ PY
 log "8. deployment units + mkbootimg import"
 for f in Softs/sensors/hexagonrpcd-sensors.service Softs/sensors/ssc.conf \
          Softs/sensors/00-adsp.conf Softs/sensors/80-iio-sensor-proxy.rules \
+         Softs/sensors/qrtr-ns.service Softs/sensors/dada-adsp.service \
          Softs/sensors/install-on-device.sh Softs/sensors/verify-on-device.sh; do
     [[ -s $f ]] || die "missing: $f"
 done
 grep -q 'ssc-accel' Softs/sensors/80-iio-sensor-proxy.rules || die "udev rules unpatched"
 PYTHONPATH=tools/mkbootimg python3 -c 'import mkbootimg' || die "mkbootimg.py import failed"
 info "deployment units + mkbootimg OK"
+
+log "9. hexagonrpc data archive"
+DATA=Softs/sensors/data/hexagonrpc.tar.zst
+[[ -s $DATA ]] || die "missing sensor data archive: $DATA"
+command -v zstd >/dev/null 2>&1 || die "zstd needed to verify the archive"
+# Materialise the listing once: `tar -tf | grep -q` would SIGPIPE tar under
+# set -o pipefail and produce a false "missing" result.
+LIST=$(tar -I zstd -tf "$DATA")
+n=$(printf '%s\n' "$LIST" | wc -l)
+[[ $n -gt 1000 ]] || die "archive has only $n entries (expected >1000)"
+for p in hexagonrpc/sensors/config/json.lst hexagonrpc/sensors/sns_reg.conf \
+         hexagonrpc/sensors/state/sns_reg_version; do
+    # No pipe here either: grep -q closes the pipe early and pipefail turns
+    # the resulting SIGPIPE into a false failure.
+    case $'\n'"$LIST"$'\n' in
+        *$'\n'"$p"$'\n'*) ;;
+        *) die "archive missing $p" ;;
+    esac
+done
+info "data archive OK ($n entries, $(du -h "$DATA" | cut -f1))"
 
 log "DRY-RUN PASS"

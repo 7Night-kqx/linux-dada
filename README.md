@@ -25,6 +25,8 @@ CI 全流程与目录说明见 [docs/CI.md](docs/CI.md)。
 ## 安全边界
 
 - 只用 `fastboot boot` 临时启动，**绝不 `fastboot flash`**、不写/擦/激活分区。
-- 设备私有数据（`/var/lib/hexagonrpc` 数据树、persist/EFS、MAC、序列号）
-  不进仓库、不进镜像，由 `Softs/sensors/install-on-device.sh` 在真机注入。
-- 固件含高通专有二进制，仓库应保持 **private**。
+- persist/EFS/RPMB、Wi-Fi MAC、序列号**仍不入库**。但 `/var/lib/hexagonrpc/`
+  传感器数据树（每台设备私有的出厂标定 / registry / 高通 DSP 二进制）现已
+  按需求随镜像发布，见 `Softs/sensors/data/README.md`。
+- 固件与该数据树含高通专有二进制，仓库当前为 **public**（用户决定保持公开）；
+  公开分发风险由用户承担。换设备必须替换成该机自己的数据副本。
