@@ -76,7 +76,7 @@ apt-get install -y --no-install-recommends \
     openssh-server sudo adduser passwd \
     qrtr-tools zstd \
     network-manager wpasupplicant iproute2 isc-dhcp-client \
-    wireless-tools rfkill iw \
+    net-tools iputils-ping wireless-tools rfkill iw \
     libdrm-dev libwayland-dev wayland-protocols libwayland-egl-backend-dev \
     libx11-dev libxext-dev libxfixes-dev libxcb1-dev libx11-xcb-dev \
     libxcb-dri2-0-dev libxcb-dri3-dev libxcb-present-dev libxcb-sync-dev \
@@ -295,10 +295,35 @@ systemctl --root=/ enable NetworkManager.service \
                          hexagonrpcd-sensors.service iio-sensor-proxy.service \
                          ssh.service
 : > /etc/machine-id
-# Host keys are generated on first boot by ssh.service (ssh-keygen -A via
-# systemd unit / sshd init); do not ship pre-generated keys in a public image.
-rm -f /etc/ssh/ssh_host_* 2>/dev/null || true
 printf 'dada\n' > /etc/hostname
+
+# ---------------------------------------------------------------- ssh host keys
+# Debian's ssh.service only runs `sshd -t` (config check) before starting
+# sshd; it does NOT generate host keys. Deleting them (as an earlier version
+# of this script did) makes `sshd -t` fail with "no hostkeys available" and
+# ssh.service fails to start on the device. Generate them at build time and
+# KEEP them so sshd can start on first boot.
+log "ssh: generate host keys + validate sshd config"
+ssh-keygen -A
+[[ -f /etc/ssh/ssh_host_ed25519_key ]] || die "ssh host key generation failed"
+# Also install a small first-boot keygen unit as a belt-and-braces guard: if
+# the image is ever re-keyed or the keys are removed, regenerate before sshd.
+install -d /usr/lib/systemd/system
+cat > /usr/lib/systemd/system/dada-ssh-keygen.service <<'EOF'
+[Unit]
+Description=Regenerate SSH host keys if missing
+Before=ssh.service
+ConditionPathExists=!/etc/ssh/ssh_host_ed25519_key
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/ssh-keygen -A
+RemainAfterExit=yes
+
+[Install]
+WantedBy=multi-user.target
+EOF
+systemctl --root=/ enable dada-ssh-keygen.service
 
 # ---------------------------------------------------------------- accounts
 # mmdebstrap minbase leaves root LOCKED and creates no normal user, so the
@@ -324,8 +349,16 @@ mkdir -p /etc/ssh/sshd_config.d
 cat > /etc/ssh/sshd_config.d/10-dada.conf <<'EOF'
 PermitRootLogin yes
 PasswordAuthentication yes
+KbdInteractiveAuthentication no
+UsePAM yes
 EOF
-info "accounts configured (user='$DADA_USER', root password synced)"
+# Validate the effective config now. This is exactly what ssh.service runs
+# (ExecStartPre=/usr/sbin/sshd -t); if it fails here it will fail on the phone.
+# sshd needs /run/sshd for privilege separation; systemd-tmpfiles normally
+# creates it at boot, create it here so the check (and first boot) works.
+install -d -m 0755 /run/sshd
+/usr/sbin/sshd -t || die "sshd -t failed (ssh.service would not start)"
+info "accounts configured (user='$DADA_USER', root password synced); sshd -t OK"
 
 # ---------------------------------------------------------------- artifacts (before cleanup!)
 log "collect artifacts into $OUT"

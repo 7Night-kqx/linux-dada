@@ -95,9 +95,13 @@ purged before packaging.
   normal user and root.
 - SSH: openssh-server is installed and enabled; password auth and root login
   are allowed so WiFi SSH is usable (the gadget serial console is gone on the
-  USB host track). Host keys are generated on first boot.
+  USB host track). Host keys are generated at BUILD time (ssh-keygen -A) and
+  kept, so \`sshd -t\` passes and ssh.service starts on first boot. A
+  dada-ssh-keygen.service guard regenerates them if ever missing.
 - **Change the password after first boot**: \`passwd\` and \`passwd root\`.
   Dispatch the workflow with your own values instead of the defaults.
+- Network CLI tools: \`ifconfig\` (net-tools), \`ping\` (iputils-ping),
+  \`ip\` (iproute2), \`iw\`, \`rfkill\`, \`nmcli\` are all installed.
 
 ## WiFi
 - \`network-manager\` + \`wpa_supplicant\` + \`iproute2\` + \`iw\`/\`rfkill\` are

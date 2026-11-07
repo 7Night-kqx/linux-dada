@@ -147,14 +147,27 @@ host key 首次启动生成。**首次登录后立刻 `passwd` 改密码**（默
 
 ## 网络（普通 WiFi）
 
-CI 安装 `network-manager wpasupplicant iproute2 isc-dhcp-client wireless-tools
-rfkill iw` 并 enable `NetworkManager.service`：
+CI 安装 `network-manager wpasupplicant iproute2 isc-dhcp-client net-tools
+iputils-ping wireless-tools rfkill iw` 并 enable `NetworkManager.service`：
 
 ```bash
 nmcli device wifi list
 nmcli device wifi connect "<SSID>" password "<PSK>"
 nmcli device status
+ifconfig wlan0          # net-tools
+ping 8.8.8.8            # iputils-ping
+ip addr                 # iproute2
 ```
+
+### SSH 服务
+
+`ssh.service` 在真机曾报 `Failed to start ssh.service`：Debian 的 unit 只有
+`ExecStartPre=/usr/sbin/sshd -t`，**不会生成 host key**，而旧脚本把 dpkg 装的
+`/etc/ssh/ssh_host_*` 全删了 → `sshd -t` 因无 host key 失败。现改为**构建期
+`ssh-keygen -A` 生成并保留**，另加 `dada-ssh-keygen.service`（`Before=ssh.service`
++ `ConditionPathExists=!...`）兜底；`10-dada.conf` 显式开
+`PermitRootLogin yes` / `PasswordAuthentication yes` / `UsePAM yes`，构建期跑
+`sshd -t` 校验。`ssh.service` 自带 `RuntimeDirectory=sshd`，无需手工建 `/run/sshd`。
 
 **基带/modem 暂不纳入，且 MPSS 已禁用**：`modemmanager` 在 Debian 只是
 `network-manager` 的 Recommends，构建用 `--no-install-recommends` 所以不会安装；
