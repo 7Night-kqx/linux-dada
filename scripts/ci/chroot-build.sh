@@ -80,7 +80,9 @@ apt-get install -y --no-install-recommends \
     libdrm-dev libwayland-dev wayland-protocols libwayland-egl-backend-dev \
     libx11-dev libxext-dev libxfixes-dev libxcb1-dev libx11-xcb-dev \
     libxcb-dri2-0-dev libxcb-dri3-dev libxcb-present-dev libxcb-sync-dev \
-    libxcb-glx0-dev libxshmfence-dev libxrandr-dev libxdamage-dev \
+    libxcb-glx0-dev libxcb-shm0-dev libxcb-xfixes0-dev libxcb-keysyms1-dev \
+    libxcb-randr0-dev x11proto-gl-dev \
+    libxshmfence-dev libxrandr-dev libxdamage-dev \
     libxxf86vm-dev libxrender-dev libexpat1-dev libzstd-dev \
     libglvnd-dev libgbm-dev libvulkan-dev glslang-tools \
     python3-mako python3-ply python3-yaml python3-packaging \
