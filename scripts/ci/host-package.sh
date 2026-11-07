@@ -101,7 +101,14 @@ purged before packaging.
 - **Change the password after first boot**: \`passwd\` and \`passwd root\`.
   Dispatch the workflow with your own values instead of the defaults.
 - Network CLI tools: \`ifconfig\` (net-tools), \`ping\` (iputils-ping),
-  \`ip\` (iproute2), \`iw\`, \`rfkill\`, \`nmcli\` are all installed.
+  \`ip\` (iproute2), \`iw\`, \`rfkill\`, \`nmcli\` are all installed, plus
+  \`vim\`, \`fastfetch\`, \`btop\`.
+- apt uses a single source (\`/etc/apt/sources.list\`, TUNA mirror) and the
+  package index is kept, so \`apt install\` works out of the box.
+- Timezone \`Asia/Shanghai\` + \`systemd-timesyncd\` keep the clock correct
+  (the phone has no RTC battery; a wrong clock breaks apt's HTTPS cert
+  validation). Run \`apt update\` after WiFi is connected if the clock was
+  just synced.
 
 ## WiFi
 - \`network-manager\` + \`wpa_supplicant\` + \`iproute2\` + \`iw\`/\`rfkill\` are

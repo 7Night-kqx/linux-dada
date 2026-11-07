@@ -69,8 +69,11 @@ rm -f /usr/bin/gcc* /usr/bin/*-gcc* /usr/bin/g++* /usr/bin/cc \
 rm -rf /usr/include /usr/lib/aarch64-linux-gnu/*.a \
        /usr/lib/aarch64-linux-gnu/pkgconfig /usr/share/pkgconfig \
        /usr/lib/python3*/site-packages 2>/dev/null || true
+# apt-get clean drops the downloaded .deb cache but KEEP /var/lib/apt/lists
+# (the package index). Removing the index made `apt install <pkg>` on the
+# device fail with "Unable to locate package" until the user ran apt update
+# first. Keeping it makes the rootfs usable out of the box.
 apt-get clean
-rm -rf /var/lib/apt/lists/*
 
 log "remove build sources, objects, caches"
 # Never leave the workflow-supplied plaintext password behind.

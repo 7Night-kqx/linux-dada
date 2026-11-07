@@ -45,24 +45,13 @@ log "toolchain (native arm64, no CROSS_COMPILE)"
 # ---------------------------------------------------------------- dependencies
 log "apt: build + runtime dependencies (Debian trixie names)"
 export DEBIAN_FRONTEND=noninteractive
-# mmdebstrap writes the MIRROR into the rootfs' apt sources, but make it
-# explicit (deb822) so chroot apt always uses the fast TUNA mirror. The
-# debian-archive-keyring package installed by --include verifies InRelease.
-cat > /etc/apt/sources.list.d/dada-debian.sources <<EOF
-Types: deb
-URIs: https://mirrors.tuna.tsinghua.edu.cn/debian
-Suites: trixie trixie-updates
-Components: main
-Signed-By: /usr/share/keyrings/debian-archive-keyring.gpg
-EOF
-# Drop any leftover deb.debian.org entries (slow from the runner) but keep
-# other sources (e.g. security) that mmdebstrap may have generated.
-# Guard against missing files: grep -r returns 2 when a path does not exist,
-# which under `set -o pipefail` + `set -e` would abort the whole build.
-for f in /etc/apt/sources.list /etc/apt/sources.list.d/*; do
-    [[ -f $f ]] || continue
-    grep -q 'deb.debian.org' "$f" && rm -f "$f" || true
-done
+# Keep /etc/apt/sources.list AS THE SINGLE SOURCE. mmdebstrap wrote it as a
+# one-line entry pointing at the TUNA mirror (from $MIRROR); an earlier
+# version also wrote a deb822 file, which made apt warn "Target Packages ...
+# is configured multiple times". Drop any extra deb822 source we may have
+# created and keep security/updates entries mmdebstrap put in sources.list.d/.
+rm -f /etc/apt/sources.list.d/dada-debian.sources
+[[ -f /etc/apt/sources.list ]] || die "/etc/apt/sources.list missing (mmdebstrap did not create it)"
 apt-get update
 apt-get install -y --no-install-recommends \
     gcc make bc bison flex libssl-dev libelf-dev device-tree-compiler \
@@ -77,6 +66,7 @@ apt-get install -y --no-install-recommends \
     qrtr-tools zstd \
     network-manager wpasupplicant iproute2 isc-dhcp-client \
     net-tools iputils-ping wireless-tools rfkill iw \
+    vim fastfetch btop systemd-timesyncd tzdata \
     libdrm-dev libwayland-dev wayland-protocols libwayland-egl-backend-dev \
     libx11-dev libxext-dev libxfixes-dev libxcb1-dev libx11-xcb-dev \
     libxcb-dri2-0-dev libxcb-dri3-dev libxcb-present-dev libxcb-sync-dev \
@@ -293,9 +283,22 @@ info "static verification passed"
 systemctl --root=/ enable NetworkManager.service \
                          qrtr-ns.service dada-adsp.service \
                          hexagonrpcd-sensors.service iio-sensor-proxy.service \
-                         ssh.service
+                         ssh.service systemd-timesyncd.service
 : > /etc/machine-id
 printf 'dada\n' > /etc/hostname
+
+# ---------------------------------------------------------------- timezone / clock
+# The phone has no battery-backed RTC, so after restoring the rootfs the clock
+# can be years off. That makes apt's HTTPS to the TUNA mirror fail with
+# "certificate verify failed" (cert not yet valid / expired). Ship Shanghai
+# timezone + systemd-timesyncd so the clock is corrected automatically at
+# boot. apt update then works once the network is up.
+log "timezone: Asia/Shanghai + systemd-timesyncd"
+printf 'Asia/Shanghai\n' > /etc/timezone
+rm -f /etc/localtime
+ln -s /usr/share/zoneinfo/Asia/Shanghai /etc/localtime
+[[ -f /usr/share/zoneinfo/Asia/Shanghai ]] || die "tzdata missing Asia/Shanghai"
+info "timezone set to Asia/Shanghai"
 
 # ---------------------------------------------------------------- ssh host keys
 # Debian's ssh.service only runs `sshd -t` (config check) before starting

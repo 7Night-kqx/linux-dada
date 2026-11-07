@@ -148,7 +148,8 @@ host key 首次启动生成。**首次登录后立刻 `passwd` 改密码**（默
 ## 网络（普通 WiFi）
 
 CI 安装 `network-manager wpasupplicant iproute2 isc-dhcp-client net-tools
-iputils-ping wireless-tools rfkill iw` 并 enable `NetworkManager.service`：
+iputils-ping wireless-tools rfkill iw vim fastfetch btop systemd-timesyncd
+tzdata` 并 enable `NetworkManager.service`：
 
 ```bash
 nmcli device wifi list
@@ -157,7 +158,22 @@ nmcli device status
 ifconfig wlan0          # net-tools
 ping 8.8.8.8            # iputils-ping
 ip addr                 # iproute2
+fastfetch / btop / vim
 ```
+
+### apt 源与索引
+
+- **单一源**：`/etc/apt/sources.list`（mmdebstrap 生成的 one-line TUNA 条目）。
+  旧版额外写了 `/etc/apt/sources.list.d/dada-debian.sources`（deb822，同样
+  TUNA），导致 `apt` 每次报 `Target Packages ... is configured multiple
+  times`。现构建时删掉该 deb822 文件，只留 `sources.list`。
+- **保留包索引**：`chroot-cleanup.sh` 只 `apt-get clean`（清 .deb 缓存），
+  **不再 `rm -rf /var/lib/apt/lists/*`**。之前删掉索引后设备直接
+  `apt install fastfetch/btop` 会报 `Unable to locate package`。
+- **时间/证书**：手机无 RTC 电池，恢复 rootfs 后时钟可能偏差数年，导致
+  `apt update` 到清华源 HTTPS 报 `certificate verify failed`（证书未生效/
+  已过期，证书本身有效）。现设时区 `Asia/Shanghai` 并 enable
+  `systemd-timesyncd.service`，联网后自动对时，apt 即可正常工作。
 
 ### SSH 服务
 
