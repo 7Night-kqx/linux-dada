@@ -156,10 +156,25 @@ nmcli device wifi connect "<SSID>" password "<PSK>"
 nmcli device status
 ```
 
-**基带/modem 暂不纳入**：`modemmanager` 在 Debian 只是 `network-manager` 的
-Recommends，构建用 `--no-install-recommends` 所以不会安装；只有客户端库
-`libmm-glib0` 会作为 NM 的硬依赖被带上（纯库，不启动任何服务）。蜂窝数据需要
-`dada-modem.service` / `tqftpserv` / `rmtfs` / RPMB 许可等一整套，另立阶段。
+**基带/modem 暂不纳入，且 MPSS 已禁用**：`modemmanager` 在 Debian 只是
+`network-manager` 的 Recommends，构建用 `--no-install-recommends` 所以不会安装；
+只有客户端库 `libmm-glib0` 会作为 NM 的硬依赖被带上（纯库，不启动任何服务）。
+
+⚠️ 内核 DTS 默认通过 `dada-mpss-enable.dtsi` 把 `&remoteproc_mpss` 设为
+`status = "okay"`，而 rootfs 没有基带许可/远程文件系统。这会让 MPSS 固件启动后
+在 Smart Transmit 许可检查（`dog_hal_common`）处 fatal，`remoteproc` 的
+crash/recovery 链最终导致整机自动重启（屏幕可见 `crash #1 in modem`、
+`ipa ... error -5 ... flow control`）。
+
+因此在 **CI 侧**禁用 MPSS：`chroot-build.sh` 在 `make dtbs` 之前把编译副本
+`/workspace/linux/.../dada-mpss-enable.dtsi` 的 `status` 改为 `"disabled"`，
+并把改后的 dtsi 收进产物（`dts-dada-mpss-enable.dtsi`）以便复现。
+**linux 子模块本身不改**；ADSP（`remoteproc_adsp`，传感器/音频需要）是另一个
+PAS 节点，保持 `okay`。`CONFIG_ARM64_BUILTIN_DTB_FORCE=y` 意味着 DTB 编进
+Image、外部 dtb 被忽略，所以「只换 dtb」不可行，必须改 DTS 源重编。
+
+蜂窝数据需要 `dada-modem.service` / `tqftpserv` / `rmtfs` / RPMB 许可等一整套，
+另立阶段；启用时把上述 CI 覆盖撤掉即可。
 
 ## GPU（Adreno 830 用户态驱动）
 

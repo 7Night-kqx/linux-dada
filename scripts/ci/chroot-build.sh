@@ -107,6 +107,25 @@ for fw in $(sed -n 's/^CONFIG_EXTRA_FIRMWARE="\(.*\)"$/\1/p' "$BUILD/.config" | 
 done
 info "CONFIG_EXTRA_FIRMWARE blobs present"
 
+# ---------------------------------------------------------------- disable modem (MPSS)
+# The board DTS enables the modem via dada-mpss-enable.dtsi, but the CI rootfs
+# deliberately has NO modem userspace (no dada-modem/tqftpserv/rmtfs/RPMB
+# license/EFS). MPSS then boots, fails its Smart Transmit license check
+# (dog_hal_common) and the remoteproc crash/recovery chain eventually reboots
+# the phone. Disable the MPSS node in the BUILD COPY of the DTS only: the
+# linux submodule is untouched. ADSP (sensors/audio) is a separate PAS node
+# and stays enabled.
+MPSS_DTSI=$WS/linux/arch/arm64/boot/dts/qcom/dada-mpss-enable.dtsi
+[[ -f $MPSS_DTSI ]] || die "mpss dtsi missing: $MPSS_DTSI"
+if grep -q 'status = "okay"' "$MPSS_DTSI"; then
+    sed -i 's#status = "okay"#status = "disabled"#' "$MPSS_DTSI"
+    info "MPSS disabled in build DTS copy (modem userspace not shipped)"
+else
+    info "MPSS already disabled in build DTS copy"
+fi
+grep -q 'status = "disabled"' "$MPSS_DTSI" \
+    || die "failed to disable MPSS in $MPSS_DTSI"
+
 log "kernel: Image dtbs modules (-j$JOBS)"
 make O="$BUILD" ARCH=arm64 -j"$JOBS" Image dtbs modules
 KREL=$(cat "$BUILD/include/config/kernel.release")
@@ -314,6 +333,9 @@ mkdir -p "$OUT"
 cp "$BUILD/arch/arm64/boot/Image" "$OUT/Image-dada-debian"
 cp "$BUILD/.config" "$OUT/final.config"
 cp "$WS/linux/arch/arm64/boot/dts/qcom/sm8750-xiaomi-dada-mainline.dts" "$OUT/dts-snapshot.dts"
+# Record the CI-side MPSS override so the produced DTB is reproducible.
+cp "$WS/linux/arch/arm64/boot/dts/qcom/dada-mpss-enable.dtsi" \
+   "$OUT/dts-dada-mpss-enable.dtsi"
 find "$BUILD/arch/arm64/boot/dts/qcom" -name 'sm8750-xiaomi-dada-mainline.dtb' \
      -exec cp {} "$OUT/" \;
 printf '%s\n' "$KREL" > "$OUT/kernel.release"
