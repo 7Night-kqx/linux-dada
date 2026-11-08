@@ -163,8 +163,15 @@ WiFi SSH 是主要远程通道。
   `AutomaticLoginEnable = true` / `AutomaticLogin = <username>`，用户名跟随
   `workflow_dispatch` 的 `username`（默认 `dada`）；默认 target 设为
   `graphical.target`，`gdm3.service` 已 enable。
-- Mesa A830 会话环境已通过 `/etc/environment.d/`、profile.d 与 gdm drop-in
-  注入（`LD_LIBRARY_PATH` / `VK_DRIVER_FILES` 等），GNOME 会话可用 turnip。
+- **Mesa env 不注入会话**：自编 Mesa（27.0-devel）与 GNOME 51 用的 sid
+  Mesa 26.x 若在同一进程混用会崩溃（表现为 `user@<uid>` 反复启停、桌面卡住）。
+  驱动只装到 `/opt/mesa-a830`，不写 `/etc/environment.d/`、profile.d、gdm
+  drop-in；桌面用 sid Mesa。`DADA_MESA_ENV=1` 可开回全局注入用于调试。
+- **machine-id**：构建期生成稳定值，不再清空（空 machine-id 会让 GDM 自动
+  登录时的 dbus/`systemd --user` 异常）。
+- **传感器解耦**：`hexagonrpcd-sensors.service` / `ssc.conf` 由 `Requires=`
+  改 `Wants=`，fastrpc device 超时不再连带把 iio-sensor-proxy 与图形会话
+  判为失败。
 
 ## 网络（普通 WiFi）
 
@@ -237,10 +244,9 @@ CI 从 `config/mesa-ref.txt` pin 的 **Mesa upstream main** 源码（上游 comm
 `2061a5ee` 起已含 A830v1 → **无需补丁**）在 chroot 里原生编译：
 
 - `freedreno`（GL/EGL/GBM）+ `turnip`（Vulkan），装到 `/opt/mesa-a830`
-- 会话环境写入 `/etc/environment`、`/etc/environment.d/50-mesa-a830.conf`、
-  `/etc/profile.d/mesa-a830.sh`、gdm/gdm3 drop-in
-- `LD_LIBRARY_PATH` 指向 `/opt/mesa-a830/runtime`（无 RPATH，故需软链汇聚
-  `libEGL/libGL/libGLESv2/libgbm/libgallium`）
+- **会话环境默认不注入**（避免与 GNOME 51 的 sid Mesa 混用崩溃），
+  `DADA_MESA_ENV=1` 才写 `/etc/environment.d/`、profile.d、gdm drop-in；
+  `LD_LIBRARY_PATH` 本应指向 `/opt/mesa-a830/runtime`（无 RPATH）
 - 选项集逐项对照 pinned commit 的 `meson.options` 核验过：main 移除了
   `-Dstrip=true`，改用 `meson install --strip`；meson 要求 `>=1.7.0`，
   sid 的 1.12.1 满足（trixie 的 1.7.0-1 也刚好满足）

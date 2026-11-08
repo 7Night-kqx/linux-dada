@@ -111,10 +111,19 @@ if [[ ! -e $PREFIX/share/glvnd/egl_vendor.d/50_mesa.json ]]; then
 EOF
 fi
 
-# System-wide environment. Write BOTH forms: /etc/environment is what the
-# verified device used (PAM pam_env reads it), while /etc/environment.d/ is
-# the systemd-native form. Do not clobber PATH in /etc/environment — append.
-MESA_ENV=$(cat <<EOF
+# ---------------------------------------------------------------- session env
+# IMPORTANT: do NOT inject Mesa's LD_LIBRARY_PATH system-wide by default.
+# GNOME 51 on sid links its own Mesa 26.x (gtk4/mutter/gnome-shell). Forcing
+# LD_LIBRARY_PATH=/opt/mesa-a830/runtime (self-built Mesa 27.0-devel) into
+# every systemd user session makes those processes mix two Mesa ABI versions
+# and crash -- that showed up as the user@<uid> start/stop loop that kept the
+# graphical session from coming up.
+#
+# The A830 drivers are still installed at /opt/mesa-a830 and can be wired in
+# later via a full, ABI-consistent desktop integration. Set
+# DADA_MESA_ENV=1 to opt back into the old global injection for debugging.
+if [[ ${DADA_MESA_ENV:-0} == 1 ]]; then
+    MESA_ENV=$(cat <<EOF
 LD_LIBRARY_PATH="$PREFIX/runtime"
 LIBGL_DRIVERS_PATH="$PREFIX/$LIBDIR/dri"
 GBM_BACKENDS_PATH="$PREFIX/$LIBDIR/gbm"
@@ -122,23 +131,23 @@ __EGL_VENDOR_LIBRARY_FILENAMES="$PREFIX/share/glvnd/egl_vendor.d/50_mesa.json"
 VK_DRIVER_FILES="$PREFIX/share/vulkan/icd.d/freedreno_icd.aarch64.json"
 EOF
 )
-grep -v -E '^(LD_LIBRARY_PATH|LIBGL_DRIVERS_PATH|GBM_BACKENDS_PATH|__EGL_VENDOR_LIBRARY_FILENAMES|VK_DRIVER_FILES)=' \
-    /etc/environment 2>/dev/null > /tmp/dada-env.tmp || true
-printf '%s\n' "$MESA_ENV" >> /tmp/dada-env.tmp
-install -m644 /tmp/dada-env.tmp /etc/environment
-rm -f /tmp/dada-env.tmp
-install -d /etc/environment.d
-printf '%s\n' "$MESA_ENV" > /etc/environment.d/50-mesa-a830.conf
-install -d /etc/profile.d
-cp "$MESA_ASSETS/env/mesa-a830.sh" /etc/profile.d/mesa-a830.sh
-chmod 644 /etc/profile.d/mesa-a830.sh
-for d in gdm gdm3; do
-    install -d "/etc/systemd/system/$d.service.d"
-    cp "$MESA_ASSETS/env/50-mesa-a830.conf" \
-       "/etc/systemd/system/$d.service.d/50-mesa-a830.conf"
-done
-
-# NOTE: /etc/environment is written by install-mesa-a830.sh in the reference
-# flow; we use /etc/environment.d/ instead (systemd/PAM on Debian 13 supports
-# it) to avoid clobbering PATH and other entries.
+    grep -v -E '^(LD_LIBRARY_PATH|LIBGL_DRIVERS_PATH|GBM_BACKENDS_PATH|__EGL_VENDOR_LIBRARY_FILENAMES|VK_DRIVER_FILES)=' \
+        /etc/environment 2>/dev/null > /tmp/dada-env.tmp || true
+    printf '%s\n' "$MESA_ENV" >> /tmp/dada-env.tmp
+    install -m644 /tmp/dada-env.tmp /etc/environment
+    rm -f /tmp/dada-env.tmp
+    install -d /etc/environment.d
+    printf '%s\n' "$MESA_ENV" > /etc/environment.d/50-mesa-a830.conf
+    install -d /etc/profile.d
+    cp "$MESA_ASSETS/env/mesa-a830.sh" /etc/profile.d/mesa-a830.sh
+    chmod 644 /etc/profile.d/mesa-a830.sh
+    for d in gdm gdm3; do
+        install -d "/etc/systemd/system/$d.service.d"
+        cp "$MESA_ASSETS/env/50-mesa-a830.conf" \
+           "/etc/systemd/system/$d.service.d/50-mesa-a830.conf"
+    done
+    info "Mesa session env injected (DADA_MESA_ENV=1)"
+else
+    info "Mesa drivers installed but NOT injected into the session env (desktop uses sid Mesa)"
+fi
 info "mesa installed at $PREFIX ($(du -sh "$PREFIX" | cut -f1))"

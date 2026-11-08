@@ -83,8 +83,9 @@ objects were purged before packaging.
   from Debian sid packages (no source builds).
 - **GDM autologin** is enabled for the workflow \`username\` (default **dada**)
   via \`/etc/gdm3/daemon.conf\`; default boot target is graphical.
-- Mesa A830 (freedreno/turnip) in \`/opt/mesa-a830\` is wired into the session
-  via \`/etc/environment.d/\`, profile.d and gdm drop-ins.
+- Self-built Mesa A830 lives at \`/opt/mesa-a830\` but is intentionally NOT
+  injected into the GNOME session (ABI conflict with sid Mesa); the desktop
+  uses sid's Mesa.
 
 ## Artifacts
 - \`Image-dada-debian\` — kernel image (built-in DTB, ARM64_BUILTIN_DTB_FORCE)
@@ -129,12 +130,14 @@ objects were purged before packaging.
 ## GPU (Adreno 830)
 - Mesa is built from pinned upstream main (already contains the A830v1 chip
   id, no patch needed): freedreno GL/EGL/GBM + turnip Vulkan, installed to
-  \`/opt/mesa-a830\`. Debian's own Mesa 25.x cannot drive this GPU.
-- Session env is set in \`/etc/environment\`, \`/etc/environment.d/\`,
-  \`/etc/profile.d/mesa-a830.sh\` and gdm drop-ins, so desktop sessions pick
-  up \`LD_LIBRARY_PATH\` / \`VK_DRIVER_FILES\` automatically.
-- Verify: \`ls /dev/dri/\` (card0 + renderD128), and
-  \`VK_DRIVER_FILES=/opt/mesa-a830/share/vulkan/icd.d/freedreno_icd.aarch64.json vulkaninfo\`.
+  \`/opt/mesa-a830\`.
+- **The self-built Mesa is NOT injected into the GNOME session env**: forcing
+  \`LD_LIBRARY_PATH=/opt/mesa-a830/runtime\` (Mesa 27.0-devel) into GNOME 51
+  sessions made them mix two Mesa ABI versions and crash. Drivers are present
+  at \`/opt/mesa-a830\` for a later ABI-consistent integration; set
+  \`DADA_MESA_ENV=1\` to opt back in for debugging. The desktop currently uses
+  sid's Mesa.
+- Verify: \`ls /dev/dri/\` (card0 + renderD128).
 - Kernel side (drm/msm + GPU/GMU DT + gen80000 firmware) is already in the
   Image.
 

@@ -1,11 +1,18 @@
 [Unit]
 Description=FastRPC listener for Qualcomm SSC sensors (dada / SM8750)
 Documentation=https://github.com/linux-msm/hexagonrpc
-Requires=dev-fastrpc-adsp-secure.device
+# The fastrpc device appears only after ADSP boots. Use Wants= (not
+# Requires=) so a device timeout does not mark this unit -- and, via the
+# iio-sensor-proxy drop-in, the whole graphical session -- as failed.
+Wants=dev-fastrpc-adsp-secure.device
 After=dev-fastrpc-adsp-secure.device
+After=dada-adsp.service
 Before=iio-sensor-proxy.service
 # The ADSP firmware is loaded by qcom_q6v5_pas (see 00-adsp.conf).
 After=systemd-modules-load.service
+# Do not wait forever for the fastrpc device on this bring-up kernel.
+JobTimeoutSec=30
+JobRunningTimeoutSec=30
 
 [Service]
 Type=simple

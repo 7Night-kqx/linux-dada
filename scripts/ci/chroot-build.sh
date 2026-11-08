@@ -284,7 +284,16 @@ systemctl --root=/ enable NetworkManager.service \
                          qrtr-ns.service dada-adsp.service \
                          hexagonrpcd-sensors.service iio-sensor-proxy.service \
                          ssh.service systemd-timesyncd.service
-: > /etc/machine-id
+# Generate a stable machine-id at build time. Leaving it empty makes systemd
+# regenerate it on first boot, but a GDM autologin / GNOME user session can
+# start before that happens, and dbus/systemd --user then misbehave (the
+# user@<uid> start/stop loop seen on the device). A fixed ID in the image is
+# fine for a single-board image; systemd will keep it.
+if command -v systemd-machine-id-setup >/dev/null 2>&1; then
+    systemd-machine-id-setup --root=/ 2>/dev/null || \
+        dbus-uuidgen --ensure=/etc/machine-id 2>/dev/null || true
+fi
+[[ -s /etc/machine-id ]] || printf '%032x\n' 0xdada2026 > /etc/machine-id
 printf 'dada\n' > /etc/hostname
 
 # ---------------------------------------------------------------- timezone / clock
