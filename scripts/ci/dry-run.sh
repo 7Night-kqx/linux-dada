@@ -134,20 +134,23 @@ for p in hexagonrpc/sensors/config/json.lst hexagonrpc/sensors/sns_reg.conf \
 done
 info "data archive OK ($n entries, $(du -h "$DATA" | cut -f1))"
 
-log "10. mesa A830 assets"
-MESA_SHA=$(grep -v '^#' config/mesa-ref.txt | tr -d '[:space:]')
-[[ $MESA_SHA =~ ^[0-9a-f]{40}$ ]] || die "bad Mesa SHA in config/mesa-ref.txt"
-for f in Softs/mesa/scripts/chroot-mesa.sh Softs/mesa/scripts/scan-a830.py \
-         Softs/mesa/scripts/vk-probe.py Softs/mesa/env/50-mesa-a830.conf \
-         Softs/mesa/env/mesa-a830.env Softs/mesa/env/mesa-a830.sh; do
+log "10. Mesa binary-patch assets (no self-built Mesa)"
+for f in Softs/mesa/scripts/scan-a830.py \
+         Softs/mesa/scripts/patch-mesa-binary-a830.sh \
+         Softs/mesa/scripts/vk-probe.py; do
     [[ -s $f ]] || die "missing: $f"
 done
-# The CI meson option set must not use options removed from mesa main.
-# Only match an actual meson argument line (not the explanatory comment).
-grep -qE '^[[:space:]]+-Dstrip=' Softs/mesa/scripts/chroot-mesa.sh \
-    && die "-Dstrip was removed in Mesa main (use meson install --strip)"
-grep -q '0xffff44050001' Softs/mesa/scripts/chroot-mesa.sh \
-    || die "chroot-mesa.sh lost its A830v1 chip-id sanity check"
-info "mesa assets OK (pin ${MESA_SHA:0:12})"
+python3 - <<'PY' || die "mesa python scripts broken"
+import sys
+for f in ('Softs/mesa/scripts/scan-a830.py', 'Softs/mesa/scripts/vk-probe.py'):
+    compile(open(f, 'rb').read(), f, 'exec')
+PY
+bash -n Softs/mesa/scripts/patch-mesa-binary-a830.sh || die "patch script syntax"
+grep -q '0xffff44050001' Softs/mesa/scripts/patch-mesa-binary-a830.sh \
+    || die "patch script lost the A830v1 chip id"
+# The self-built-Mesa path must be gone.
+grep -q 'clone pinned Mesa main' scripts/ci/chroot-build.sh \
+    && die "self-built Mesa still referenced in chroot-build.sh"
+info "mesa binary-patch assets OK"
 
 log "DRY-RUN PASS"

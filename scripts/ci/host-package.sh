@@ -83,9 +83,13 @@ objects were purged before packaging.
   from Debian sid packages (no source builds).
 - **GDM autologin** is enabled for the workflow \`username\` (default **dada**)
   via \`/etc/gdm3/daemon.conf\`; default boot target is graphical.
-- Self-built Mesa A830 lives at \`/opt/mesa-a830\` but is intentionally NOT
-  injected into the GNOME session (ABI conflict with sid Mesa); the desktop
-  uses sid's Mesa.
+- **Chinese UI** (\`zh_CN.UTF-8\` + Noto CJK fonts) but the user's home
+  folders stay **English** (\`Documents\`, \`Downloads\`, \`Desktop\`, ...).
+- **GPU**: no self-built Mesa. The distro Mesa libs are binary-patched for
+  the A830v1 chip id (GL freedreno + turnip Vulkan), no \`LD_LIBRARY_PATH\`
+  injection, so the desktop stays on one consistent Mesa (verified on device:
+  \`eglinfo\` -> \`Adreno (TM) 830\`, \`vk-probe\` -> \`Adreno (TM) 830\`).
+- \`mesa-vulkan-drivers\` + \`vulkan-tools\` installed: \`vulkaninfo\` available.
 
 ## Artifacts
 - \`Image-dada-debian\` — kernel image (built-in DTB, ARM64_BUILTIN_DTB_FORCE)
@@ -128,16 +132,15 @@ objects were purged before packaging.
   dependency); cellular/modem bring-up is out of scope for this build.
 
 ## GPU (Adreno 830)
-- Mesa is built from pinned upstream main (already contains the A830v1 chip
-  id, no patch needed): freedreno GL/EGL/GBM + turnip Vulkan, installed to
-  \`/opt/mesa-a830\`.
-- **The self-built Mesa is NOT injected into the GNOME session env**: forcing
-  \`LD_LIBRARY_PATH=/opt/mesa-a830/runtime\` (Mesa 27.0-devel) into GNOME 51
-  sessions made them mix two Mesa ABI versions and crash. Drivers are present
-  at \`/opt/mesa-a830\` for a later ABI-consistent integration; set
-  \`DADA_MESA_ENV=1\` to opt back in for debugging. The desktop currently uses
-  sid's Mesa.
-- Verify: \`ls /dev/dri/\` (card0 + renderD128).
+- No self-built Mesa. The distro sid Mesa libs (\`libgallium-*.so\` and
+  \`libvulkan_freedreno.so\` from \`mesa-vulkan-drivers\`) are binary-patched at
+  build time for the A830v1 chip id (\`0xffff44050001\`). GL (freedreno) and
+  Vulkan (turnip) both work; NO \`LD_LIBRARY_PATH\` injection, so no ABI mixing.
+- Verify: \`ls /dev/dri/\` (card0 + renderD128), \`eglinfo -B\` (freedreno /
+  \`Adreno (TM) 830\`), \`vulkaninfo --summary\`.
+- \`apt upgrade\` of Mesa will overwrite the patched .so files; re-apply the
+  patch step if that happens. Patched libs are listed in
+  \`/etc/dada-a830-patched-libs\`.
 - Kernel side (drm/msm + GPU/GMU DT + gen80000 firmware) is already in the
   Image.
 

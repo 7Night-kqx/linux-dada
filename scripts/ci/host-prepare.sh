@@ -55,10 +55,10 @@ sudo cp -a "$REPO/linux" "$WS/linux"
 sudo cp -a "$REPO/config" "$WS/config"
 sudo cp -a "$REPO/firmware" "$WS/firmware"
 sudo cp -a "$REPO/tools" "$WS/tools"
-# Softs: patches, sensor deployment units and the Mesa build/env helpers are
-# needed in the chroot. The sensors-src and mesa-src checkouts are LOCAL
-# REFERENCES — CI clones pinned SHAs at build time, so those dirs must not
-# pre-exist (mesa-src is created by chroot-build.sh under $WS/Softs/).
+# Softs: patches, sensor deployment units and the Mesa binary-patch scripts
+# are needed in the chroot. sensors-src is a LOCAL REFERENCE — CI clones the
+# pinned sensor SHAs at build time, so that dir must not pre-exist.
+# (No Mesa source checkout is needed anymore: we patch the distro libs.)
 sudo install -d "$WS/Softs/patches" "$WS/Softs/sensors" "$WS/Softs/sensors-src"
 sudo cp -a "$REPO/Softs/patches/." "$WS/Softs/patches/"
 sudo cp -a "$REPO/Softs/sensors/." "$WS/Softs/sensors/"

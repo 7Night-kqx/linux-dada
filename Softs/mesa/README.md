@@ -1,65 +1,66 @@
-# mesa-a830 — Adreno 830 (SM8750 / dada) userspace drivers
+# mesa-a830 — Adreno 830 (SM8750 / dada) GPU via distro-Mesa binary patch
 
 The kernel side (`drm/msm`, GPU/GMU nodes, `0x44050001` in `a6xx_catalog.c`,
 `gen80000_*` firmware) is already built into the CI kernel. What was missing
-is the **userspace** driver: Debian trixie ships Mesa 25.0.7, whose device
-table has no `0xffff44050001` (A830v1) entry, so freedreno/turnip refuse the
-GPU.
+is the **userspace** driver: distro Mesa's device table has no
+`0xffff44050001` (A830v1) entry, so freedreno/turnip refuse the GPU.
 
-## What CI does
+## Current approach: patch the DISTRO Mesa (no source build)
 
-`chroot-build.sh` clones Mesa from `config/mesa-ref.txt` (pinned upstream
-**main**, which contains the A830v1 chip id since upstream commit `2061a5ee`,
-2026-08-19 → **no source patch needed**) and runs
-[`scripts/chroot-mesa.sh`](scripts/chroot-mesa.sh):
+An earlier version of this project built Mesa from upstream main into
+`/opt/mesa-a830` and injected it via `LD_LIBRARY_PATH`. That mixed two Mesa
+ABI versions inside GNOME 51 (which uses Debian sid's Mesa) and crashed the
+desktop (`user@<uid>` start/stop loop). It has been REMOVED.
 
-- native aarch64 meson build (no cross compiler, no `--cross-file`)
-- `-Dgallium-drivers=freedreno -Dvulkan-drivers=freedreno`
-- `-Dplatforms=x11,wayland -Dglx=dri -Degl=enabled -Dgbm=enabled`
-- `-Dllvm=disabled -Dxmlconfig=disabled` … (full set in the script, checked
-  against the pinned commit's `meson.options` — note `-Dstrip=true` was
-  removed in main, we strip at `meson install --strip` instead)
-- installs to `/opt/mesa-a830` (kept by `chroot-cleanup.sh`)
-- writes `/etc/environment`, `/etc/environment.d/50-mesa-a830.conf`,
-  `/etc/profile.d/mesa-a830.sh` and gdm/gdm3 drop-ins so sessions pick up
-  `LD_LIBRARY_PATH`, `LIBGL_DRIVERS_PATH`, `GBM_BACKENDS_PATH`,
-  `__EGL_VENDOR_LIBRARY_FILENAMES`, `VK_DRIVER_FILES`
+On-device testing (root@192.168.2.222) proved that patching the distro libs
+is sufficient:
 
-The working device (root@192.168.2.222) runs the same layout with
-`Mesa 26.3.0-devel`, i.e. this main-branch route is the one already proven
-on hardware.
+| check | result |
+|---|---|
+| `eglinfo -B` (surfaceless/GBM) | `freedreno` / **`Adreno (TM) 830`** / OpenGL 4.6 / GLES 3.2 |
+| `vk-probe.py` | enumerates **`Adreno (TM) 830`** (`0x44050001`, vendor 0x5143) |
+| desktop | stable, one Mesa, no `LD_LIBRARY_PATH` |
 
-## Verification (on device)
+The patch rewrites the single 8-byte fused chip-id entry from
+`0xffff44050000` to `0xffff44050001` (`WILDCARD_FUSE_ID | A830v1`) in:
 
-```bash
-cat /etc/environment | grep mesa-a830
-ls /opt/mesa-a830/lib/aarch64-linux-gnu/libvulkan_freedreno.so
-python3 /opt/.../scan-a830.py /opt/mesa-a830/lib/aarch64-linux-gnu/libgallium-*.so
-python3 .../vk-probe.py                  # expect: Adreno (TM) 830
-ls -l /dev/dri/                          # card0 + renderD128
-vulkaninfo --summary 2>/dev/null | head  # if vulkan-tools installed
-```
+- `/usr/lib/aarch64-linux-gnu/libgallium-*.so`  (GL/EGL/GBM)
+- `/usr/lib/aarch64-linux-gnu/libvulkan_freedreno.so` (turnip, from
+  `mesa-vulkan-drivers`)
+
+`scan-a830.py` decides `OK` (skip) / `NEEDS` (patch) / `ABSENT`/unknown
+(fail loudly). `patch-mesa-binary-a830.sh` refuses to touch the file unless
+exactly one known pattern matches. Patched libs are listed in
+`/etc/dada-a830-patched-libs`.
+
+⚠️ These `.so` files are owned by dpkg: `apt upgrade` of Mesa overwrites the
+patch, and a new Mesa version may change the byte layout (scan then reports
+NEEDS/ABSENT instead of guessing). Re-run the patch step after a Mesa upgrade.
 
 ## Files
 
 | path | role |
 |---|---|
-| `scripts/chroot-mesa.sh` | **CI entry point** — native build + install + env |
-| `scripts/scan-a830.py`, `vk-probe.py` | build-time / on-device verification |
-| `env/` | systemd drop-in, `/etc/environment` snippet, profile.d snippet |
-| `scripts/build-mesa-a830.sh` | reference *cross*-compile flow (from the old repo), NOT used by CI |
-| `scripts/install-mesa-a830.sh` | reference staged-install flow (NOT used; CI installs directly) |
-| `scripts/patch-mesa-binary-a830.sh` | binary patch for distro Mesa 26.1/26.2 (NOT used) |
-| `0001-freedreno-add-adreno-830v1-chip-id.patch` | upstream `2061a5ee` backport for 26.1/26.2 tarballs (NOT used — main already has it) |
+| `scripts/scan-a830.py` | classify a `.so` as OK / NEEDS / NEEDS* / ABSENT (exit code usable in CI) |
+| `scripts/patch-mesa-binary-a830.sh` | apply/verify the 8-byte chip-id patch (idempotent, has `--dry-run`) |
+| `scripts/vk-probe.py` | enumerate Vulkan physical devices via ctypes (no vulkan-tools needed) |
+| `env/` | reference systemd/PAM env snippets from the earlier self-built route (NOT used) |
+| `0001-freedreno-add-adreno-830v1-chip-id.patch` | upstream `2061a5ee` source backport for 26.x tarballs (NOT used) |
 
-The last four are kept as documentation/fallback for the "build a 26.x
-tarball" or "patch distro .so" routes.
+## Verification (on device)
+
+```bash
+python3 /path/to/scan-a830.py /usr/lib/aarch64-linux-gnu/libgallium-*.so \
+                              /usr/lib/aarch64-linux-gnu/libvulkan_freedreno.so
+eglinfo -B | grep -A2 'OpenGL core profile renderer'
+vulkaninfo --summary | head -30
+python3 /path/to/vk-probe.py
+```
 
 ## Kernel prerequisites (already satisfied)
 
-`DRM_MSM=y`, `DRM_MSM_GPU_STATE=y`, `SM_GPUCC_8750=y`,
-`ARM_SMMU_QCOM=y`, `PM_OPP`, `PM_DEVFREQ`, `INTERCONNECT_QCOM_SM8750`,
-DTS `gpu@3d00000` / `gmu@3d37000` / `adreno_smmu` / `gpu_zap_shader`,
-and `a6xx_catalog.c` `0x44050001`. The old `mesa-a830/README.md` in the
-reference repo claims the kernel has no GPU nodes — that was true for the
-7.3-rc1 tree and is now obsolete.
+`DRM_MSM=y`, `DRM_MSM_GPU_STATE=y`, `SM_GPUCC_8750=y`, `ARM_SMMU_QCOM=y`,
+`PM_OPP`, `PM_DEVFREQ`, `INTERCONNECT_QCOM_SM8750`, DTS `gpu@3d00000` /
+`gmu@3d37000` / `adreno_smmu` / `gpu_zap_shader`, and `a6xx_catalog.c`
+`0x44050001`. The old `mesa-a830/README.md` in the reference repo claims the
+kernel has no GPU nodes — that was true for the 7.3-rc1 tree and is obsolete.

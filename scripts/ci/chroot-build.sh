@@ -67,16 +67,8 @@ apt-get install -y --no-install-recommends \
     network-manager wpasupplicant iproute2 \
     net-tools iputils-ping wireless-tools rfkill iw \
     vim fastfetch btop systemd-timesyncd tzdata \
-    libdrm-dev libwayland-dev wayland-protocols libwayland-egl-backend-dev \
-    libx11-dev libxext-dev libxfixes-dev libxcb1-dev libx11-xcb-dev \
-    libxcb-dri2-0-dev libxcb-dri3-dev libxcb-present-dev libxcb-sync-dev \
-    libxcb-glx0-dev libxcb-shm0-dev libxcb-xfixes0-dev libxcb-keysyms1-dev \
-    libxcb-randr0-dev x11proto-gl-dev \
-    libxshmfence-dev libxrandr-dev libxdamage-dev \
-    libxxf86vm-dev libxrender-dev libexpat1-dev libzstd-dev \
-    libglvnd-dev libgbm-dev libvulkan-dev glslang-tools \
-    python3-mako python3-ply python3-yaml python3-packaging \
-    zlib1g-dev libxml2-dev \
+    mesa-vulkan-drivers vulkan-tools mesa-utils \
+    locales fonts-noto-cjk xdg-user-dirs \
     file tar xz-utils ca-certificates
 info "dependencies installed"
 log "toolchain versions"
@@ -188,34 +180,6 @@ rm -f /usr/lib/systemd/system/hexagonrpcd-adsp-sensorspd.service \
       /usr/lib/systemd/system/hexagonrpcd-adsp-rootpd.service \
       /usr/lib/systemd/system/hexagonrpcd-sdsp.service
 
-# ---------------------------------------------------------------- Mesa (A830 GPU)
-log "clone pinned Mesa main ($CONFIG/mesa-ref.txt)"
-MESA_SHA=$(grep -v '^#' "$CONFIG/mesa-ref.txt" | tr -d '[:space:]')
-[[ $MESA_SHA =~ ^[0-9a-f]{40}$ ]] || die "bad Mesa SHA in mesa-ref.txt: $MESA_SHA"
-MESA_SRC=$WS/Softs/mesa-src
-# Shallow fetch of exactly the pinned commit. A --filter=blob:none clone would
-# lazily pull blobs during meson setup (slow / fragile in CI); depth-1 fetch
-# by SHA is supported by GitLab and gives a complete tree.
-mkdir -p "$MESA_SRC"
-git -C "$MESA_SRC" init --quiet
-git -C "$MESA_SRC" remote add origin https://gitlab.freedesktop.org/mesa/mesa.git
-git -C "$MESA_SRC" fetch --quiet --depth 1 origin "$MESA_SHA"
-git -C "$MESA_SRC" checkout --quiet FETCH_HEAD
-[[ $(git -C "$MESA_SRC" rev-parse HEAD) == "$MESA_SHA" ]] \
-    || die "Mesa HEAD != pinned $MESA_SHA"
-grep -q '0xffff44050001' "$MESA_SRC/src/freedreno/common/freedreno_devices.py" \
-    || die "pinned Mesa lacks the A830v1 chip id"
-info "mesa @ ${MESA_SHA:0:12} (A830v1 chip id present, no patch needed)"
-
-log "build Mesa (freedreno GL + turnip Vulkan, native aarch64)"
-MESA_SCRIPTS=$WS/Softs/mesa/scripts
-cp "$MESA_SCRIPTS/chroot-mesa.sh" /ci/chroot-mesa.sh
-chmod +x /ci/chroot-mesa.sh
-# chroot-mesa.sh sources /ci/common.sh and reads scan-a830.py / env from the
-# staged Softs/mesa tree, so keep those paths stable.
-MESA_SRC="$MESA_SRC" JOBS="$JOBS" bash /ci/chroot-mesa.sh
-info "Mesa A830 drivers installed to /opt/mesa-a830"
-
 # ---------------------------------------------------------------- deployment
 log "install firmware + deployment units"
 install -d /lib/firmware
@@ -309,6 +273,37 @@ ln -s /usr/share/zoneinfo/Asia/Shanghai /etc/localtime
 [[ -f /usr/share/zoneinfo/Asia/Shanghai ]] || die "tzdata missing Asia/Shanghai"
 info "timezone set to Asia/Shanghai"
 
+# ---------------------------------------------------------------- locale (Chinese UI, English XDG dirs)
+# GNOME desktop in Chinese, but the user's home folders stay English
+# (Documents / Downloads / Desktop / ...). xdg-user-dirs would otherwise
+# translate them to 文档/下载/桌面 based on LANG.
+log "locale: zh_CN.UTF-8 UI + English XDG user dirs"
+printf 'zh_CN.UTF-8 UTF-8\n' > /etc/locale.gen
+locale-gen zh_CN.UTF-8 >/dev/null 2>&1 || locale-gen >/dev/null 2>&1 || true
+cat > /etc/default/locale <<'EOF'
+LANG=zh_CN.UTF-8
+LANGUAGE=zh_CN:zh
+LC_MESSAGES=zh_CN.UTF-8
+EOF
+# Force the xdg-user-dirs template to English names.
+install -d /etc/xdg
+cat > /etc/xdg/user-dirs.defaults <<'EOF'
+DESKTOP=Desktop
+DOWNLOAD=Downloads
+TEMPLATES=Templates
+PUBLICSHARE=Public
+DOCUMENTS=Documents
+MUSIC=Music
+PICTURES=Pictures
+VIDEOS=Videos
+EOF
+# Disable xdg-user-dirs-update so GNOME never rewrites the dirs to Chinese.
+cat > /etc/xdg/user-dirs.conf <<'EOF'
+enabled=False
+filename_encoding=UTF-8
+EOF
+info "zh_CN.UTF-8 locale + English XDG dirs configured"
+
 # ---------------------------------------------------------------- ssh host keys
 # Debian's ssh.service only runs `sshd -t` (config check) before starting
 # sshd; it does NOT generate host keys. Deleting them (as an earlier version
@@ -353,6 +348,26 @@ done
 if ! id "$DADA_USER" >/dev/null 2>&1; then
     useradd -m -s /bin/bash -G sudo,adm,dialout,audio,video,input,systemd-journal "$DADA_USER"
 fi
+# Pre-seed English XDG user dirs for the desktop account. Even with
+# enabled=False in /etc/xdg/user-dirs.conf, GNOME may run
+# xdg-user-dirs-update on first login; an existing user-dirs.dirs with
+# English names plus the actual directories makes that a no-op.
+USER_HOME=$(getent passwd "$DADA_USER" | cut -d: -f6)
+install -d -o "$DADA_USER" -g "$DADA_USER" "$USER_HOME/.config"
+cat > "$USER_HOME/.config/user-dirs.dirs" <<'EOF'
+XDG_DESKTOP_DIR="$HOME/Desktop"
+XDG_DOWNLOAD_DIR="$HOME/Downloads"
+XDG_TEMPLATES_DIR="$HOME/Templates"
+XDG_PUBLICSHARE_DIR="$HOME/Public"
+XDG_DOCUMENTS_DIR="$HOME/Documents"
+XDG_MUSIC_DIR="$HOME/Music"
+XDG_PICTURES_DIR="$HOME/Pictures"
+XDG_VIDEOS_DIR="$HOME/Videos"
+EOF
+for d in Desktop Downloads Templates Public Documents Music Pictures Videos; do
+    install -d -o "$DADA_USER" -g "$DADA_USER" "$USER_HOME/$d"
+done
+chown -R "$DADA_USER:$DADA_USER" "$USER_HOME/.config"
 printf '%s:%s\n' "$DADA_USER" "$DADA_PASSWORD" | chpasswd
 printf 'root:%s\n'        "$DADA_PASSWORD" | chpasswd
 # Allow password-based SSH for root (WiFi SSH is the only remote channel now
@@ -394,6 +409,42 @@ EOF
 grep -q "AutomaticLogin = $DADA_USER" /etc/gdm3/daemon.conf \
     || die "GDM autologin config failed"
 info "GNOME 51 installed; GDM autologin enabled for '$DADA_USER'"
+
+# ---------------------------------------------------------------- GPU (A830) binary patch
+# Runs AFTER every apt install (including gnome-core) so no package postinst
+# can overwrite the patched .so files. No self-built Mesa, no LD_LIBRARY_PATH
+# injection (that mixed two Mesa ABIs and crashed GNOME 51). On-device proof:
+#   eglinfo  -> freedreno / "Adreno (TM) 830" / OpenGL 4.6
+#   vk-probe -> "Adreno (TM) 830" (0x44050001) enumerated
+# The patch rewrites the single 8-byte fused chip-id entry from
+# 0xffff44050000 to 0xffff44050001 (WILDCARD_FUSE_ID | A830v1).
+log "GPU: patch distro Mesa chip-id (after all apt installs)"
+MESA_SCRIPTS=$WS/Softs/mesa/scripts
+GALLIUM=$(ls /usr/lib/aarch64-linux-gnu/libgallium-*.so 2>/dev/null | head -1 || true)
+TURNIP=/usr/lib/aarch64-linux-gnu/libvulkan_freedreno.so
+[[ -n $GALLIUM && -f $GALLIUM ]] || die "distro libgallium-*.so not found"
+[[ -f $TURNIP ]] || die "libvulkan_freedreno.so not found (mesa-vulkan-drivers missing)"
+for lib in "$GALLIUM" "$TURNIP"; do
+    # scan-a830.py: 0=already OK, 1=NEEDS patch, other=ABSENT/unknown.
+    set +e
+    VERDICT=$(python3 "$MESA_SCRIPTS/scan-a830.py" "$lib" 2>&1)
+    RC=$?
+    set -e
+    case $RC in
+        0) info "$(basename "$lib"): already OK" ;;
+        1) echo "$VERDICT" | grep -q 'NEEDS' \
+              || die "unexpected scan verdict for $lib: $VERDICT"
+           bash "$MESA_SCRIPTS/patch-mesa-binary-a830.sh" "$lib" \
+              || die "failed to patch $lib"
+           python3 "$MESA_SCRIPTS/scan-a830.py" "$lib" >/dev/null \
+              || die "$lib still not OK after patch" ;;
+        *) die "unsupported Mesa chip-id layout in $lib (scan rc=$RC): $VERDICT" ;;
+    esac
+done
+# These .so files are dpkg-owned: a future `apt upgrade` of Mesa overwrites
+# them. No dpkg-divert (it could move the .so out of the loader path).
+printf '%s\n' "$GALLIUM" "$TURNIP" > /etc/dada-a830-patched-libs
+info "distro Mesa patched for A830v1 (GL + Vulkan)"
 
 # ---------------------------------------------------------------- artifacts (before cleanup!)
 log "collect artifacts into $OUT"

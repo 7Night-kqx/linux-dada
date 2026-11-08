@@ -163,10 +163,18 @@ WiFi SSH 是主要远程通道。
   `AutomaticLoginEnable = true` / `AutomaticLogin = <username>`，用户名跟随
   `workflow_dispatch` 的 `username`（默认 `dada`）；默认 target 设为
   `graphical.target`，`gdm3.service` 已 enable。
-- **Mesa env 不注入会话**：自编 Mesa（27.0-devel）与 GNOME 51 用的 sid
-  Mesa 26.x 若在同一进程混用会崩溃（表现为 `user@<uid>` 反复启停、桌面卡住）。
-  驱动只装到 `/opt/mesa-a830`，不写 `/etc/environment.d/`、profile.d、gdm
-  drop-in；桌面用 sid Mesa。`DADA_MESA_ENV=1` 可开回全局注入用于调试。
+- **GPU**：不再自编 Mesa、也不注入任何 `LD_LIBRARY_PATH`；直接给发行版
+  sid Mesa 的两个 `.so` 打 chip-id 二进制补丁（见 GPU 段）。桌面始终用一套
+  系统 Mesa，避免混库崩溃。
+- **中文界面 + 英文用户目录**：
+  - `locales` 生成 `zh_CN.UTF-8`，`/etc/default/locale` 设
+    `LANG=zh_CN.UTF-8` / `LANGUAGE=zh_CN:zh`，装 `fonts-noto-cjk` 中文字体。
+  - **用户目录保持英文**（`Documents` / `Downloads` / `Desktop` …）：
+    `/etc/xdg/user-dirs.defaults` 写英文模板，
+    `/etc/xdg/user-dirs.conf` 设 `enabled=False` 禁止自动翻译，并给自动登录
+    用户预写 `~/.config/user-dirs.dirs`（英文路径）+ 预建英文目录。
+- **Vulkan**：apt 装 `mesa-vulkan-drivers`（turnip）+ `vulkan-tools`，
+  `vulkaninfo` / `vk-probe.py` 可用。
 - **machine-id**：构建期生成稳定值，不再清空（空 machine-id 会让 GDM 自动
   登录时的 dbus/`systemd --user` 异常）。
 - **传感器解耦**：`hexagonrpcd-sensors.service` / `ssc.conf` 由 `Requires=`
@@ -245,21 +253,27 @@ Image、外部 dtb 被忽略，所以「只换 dtb」不可行，必须改 DTS �
 内核侧 `drm/msm` + GPU/GMU/GPUCC/Adreno SMMU + `gen80000_*` 固件已随 Image
 构建（见 [README 内核前置条件](Softs/mesa/README.md)），但发行版自带 Mesa
 **没有** `0xffff44050001`（A830v1）设备表条目，freedreno/turnip 会拒绝这块
-GPU（sid 自带 Mesa 26.x 也仍缺该条目，故仍需自编 main）。
+GPU。
 
-CI 从 `config/mesa-ref.txt` pin 的 **Mesa upstream main** 源码（上游 commit
-`2061a5ee` 起已含 A830v1 → **无需补丁**）在 chroot 里原生编译：
+**已改为二进制补丁方案，不再自编 Mesa**（自编 27 + `LD_LIBRARY_PATH` 注入
+会与 GNOME 51 的 sid Mesa 26.x 混用 ABI，导致桌面 `user@<uid>` 循环崩溃）：
 
-- `freedreno`（GL/EGL/GBM）+ `turnip`（Vulkan），装到 `/opt/mesa-a830`
-- **会话环境默认不注入**（避免与 GNOME 51 的 sid Mesa 混用崩溃），
-  `DADA_MESA_ENV=1` 才写 `/etc/environment.d/`、profile.d、gdm drop-in；
-  `LD_LIBRARY_PATH` 本应指向 `/opt/mesa-a830/runtime`（无 RPATH）
-- 选项集逐项对照 pinned commit 的 `meson.options` 核验过：main 移除了
-  `-Dstrip=true`，改用 `meson install --strip`；meson 要求 `>=1.7.0`，
-  sid 的 1.12.1 满足（trixie 的 1.7.0-1 也刚好满足）
+- apt 装 `mesa-vulkan-drivers`（提供 `libvulkan_freedreno.so` / turnip）、
+  `vulkan-tools`、`mesa-utils`
+- `chroot-build.sh` 用 `scan-a830.py` 判定两个库（`libgallium-*.so` 与
+  `libvulkan_freedreno.so`），`NEEDS` 时用 `patch-mesa-binary-a830.sh` 把
+  唯一的 8 字节条目 `0xffff44050000` 改成 `0xffff44050001`；`OK` 跳过，
+  其它布局直接报错要求人工介入
+- 完全不改 `LD_LIBRARY_PATH` / GDM drop-in，桌面始终用一套系统 Mesa
+- 补丁状态记录在 `/etc/dada-a830-patched-libs`
 
-设备上验证过的那份也是 `Mesa 26.3.0-devel`（main 分支），路线一致。
-验证命令见 [Softs/mesa/README.md](Softs/mesa/README.md)。
+**真机实测（root@192.168.2.222）**：`eglinfo` → `freedreno` /
+`Adreno (TM) 830` / OpenGL 4.6 / GLES 3.2；`vk-probe.py` → 枚举出
+`Adreno (TM) 830`（`0x44050001`）。GL 与 Vulkan 硬件加速都生效，桌面不崩。
+
+⚠️ 补丁改的是 dpkg 拥有的 `.so`，`apt upgrade` 升级 Mesa 会覆盖、且新版
+字节模式可能变化（脚本会报 NEEDS/ABSENT 而不是乱改）。详见
+[Softs/mesa/README.md](Softs/mesa/README.md)。
 
 ## 上机验收（照 `docs/sensor-fix.md` 验收 B）
 
