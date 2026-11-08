@@ -424,27 +424,40 @@ GALLIUM=$(ls /usr/lib/aarch64-linux-gnu/libgallium-*.so 2>/dev/null | head -1 ||
 TURNIP=/usr/lib/aarch64-linux-gnu/libvulkan_freedreno.so
 [[ -n $GALLIUM && -f $GALLIUM ]] || die "distro libgallium-*.so not found"
 [[ -f $TURNIP ]] || die "libvulkan_freedreno.so not found (mesa-vulkan-drivers missing)"
+# scan-a830.py uses exit 1 for NEEDS (expected, not an error) and the patch
+# script uses 3 for "already patched". Those are control flow, so disable the
+# global ERR trap for this block: a failing command substitution under
+# `set +e` still fires ERR and would emit bogus ::error:: annotations.
+trap - ERR
 for lib in "$GALLIUM" "$TURNIP"; do
     # scan-a830.py: 0=already OK, 1=NEEDS patch, other=ABSENT/unknown.
-    set +e
     VERDICT=$(python3 "$MESA_SCRIPTS/scan-a830.py" "$lib" 2>&1)
     RC=$?
-    set -e
     case $RC in
         0) info "$(basename "$lib"): already OK" ;;
-        1) echo "$VERDICT" | grep -q 'NEEDS' \
-              || die "unexpected scan verdict for $lib: $VERDICT"
-           bash "$MESA_SCRIPTS/patch-mesa-binary-a830.sh" "$lib" \
-              || die "failed to patch $lib"
-           python3 "$MESA_SCRIPTS/scan-a830.py" "$lib" >/dev/null \
-              || die "$lib still not OK after patch" ;;
+        1) case $VERDICT in
+               *NEEDS*) bash "$MESA_SCRIPTS/patch-mesa-binary-a830.sh" "$lib" \
+                            || die "failed to patch $lib"
+                        python3 "$MESA_SCRIPTS/scan-a830.py" "$lib" >/dev/null \
+                            || die "$lib still not OK after patch" ;;
+               *) die "unexpected scan verdict for $lib: $VERDICT" ;;
+           esac ;;
         *) die "unsupported Mesa chip-id layout in $lib (scan rc=$RC): $VERDICT" ;;
     esac
 done
+# Restore the ERR trap for the rest of the script.
+trap 'rc=$?; printf "::error::chroot-build.sh failed at line %s (exit %s): %s\n" "$LINENO" "$rc" "$BASH_COMMAND" >&2' ERR
 # These .so files are dpkg-owned: a future `apt upgrade` of Mesa overwrites
 # them. No dpkg-divert (it could move the .so out of the loader path).
 printf '%s\n' "$GALLIUM" "$TURNIP" > /etc/dada-a830-patched-libs
-info "distro Mesa patched for A830v1 (GL + Vulkan)"
+# Write a machine-checkable proof into the artifacts, so a CI run can be
+# verified without downloading the rootfs: both libs must scan as OK.
+{
+    echo "# dada A830 binary-patch verification"
+    python3 "$MESA_SCRIPTS/scan-a830.py" "$GALLIUM" "$TURNIP"
+} > /mnt/artifacts/mesa-a830-patch.log 2>&1 \
+    || die "post-patch scan did not report OK"
+info "distro Mesa patched for A830v1 (GL + Vulkan); proof in mesa-a830-patch.log"
 
 # ---------------------------------------------------------------- artifacts (before cleanup!)
 log "collect artifacts into $OUT"
