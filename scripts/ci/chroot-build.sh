@@ -431,8 +431,13 @@ TURNIP=/usr/lib/aarch64-linux-gnu/libvulkan_freedreno.so
 trap - ERR
 for lib in "$GALLIUM" "$TURNIP"; do
     # scan-a830.py: 0=already OK, 1=NEEDS patch, other=ABSENT/unknown.
-    VERDICT=$(python3 "$MESA_SCRIPTS/scan-a830.py" "$lib" 2>&1)
-    RC=$?
+    # Use `if` so a non-zero exit (NEEDS is EXPECTED) never trips `set -e`:
+    # a bare `VAR=$(cmd)` under errexit would abort the whole build here.
+    if VERDICT=$(python3 "$MESA_SCRIPTS/scan-a830.py" "$lib" 2>&1); then
+        RC=0
+    else
+        RC=$?
+    fi
     case $RC in
         0) info "$(basename "$lib"): already OK" ;;
         1) case $VERDICT in
