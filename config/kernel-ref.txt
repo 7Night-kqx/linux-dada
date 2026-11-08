@@ -1,4 +1,4 @@
 # Pinned kernel submodule commit (7Night-kqx/linux @ dada-mainline).
 # The main repo's gitlink for path "linux" must equal this SHA.
 # CI verifies: git -C linux rev-parse HEAD == $(cat config/kernel-ref.txt)
-5bb1bb570e9b98b4443b3b00183e826c147c709e
+68f67f75f044bd4748205ee2153f61ca725e3aea

@@ -213,6 +213,13 @@ fastfetch / btop / vim
 `PermitRootLogin yes` / `PasswordAuthentication yes` / `UsePAM yes`，构建期跑
 `sshd -t` 校验。`ssh.service` 自带 `RuntimeDirectory=sshd`，无需手工建 `/run/sshd`。
 
+另一个真机问题：`fatal: ssh_sandbox_child: prctl(PR_SET_SECCOMP): Invalid
+argument [preauth]`（能连但认证前被拒）。根因是内核 `dada_defconfig` 里
+`CONFIG_SECCOMP` 被显式关掉（`HAVE_ARCH_SECCOMP=y` 但 `# CONFIG_SECCOMP is
+not set`），而 sid 的 OpenSSH 10.6 preauth 子进程用 seccomp sandbox。已开
+`CONFIG_SECCOMP=y` + `CONFIG_SECCOMP_FILTER=y`（`NET=y` 已满足依赖），并加入
+`config-assertions.txt` 防止回归。
+
 **基带/modem 暂不纳入，且 MPSS 已禁用**：`modemmanager` 在 Debian 只是
 `network-manager` 的 Recommends，构建用 `--no-install-recommends` 所以不会安装；
 只有客户端库 `libmm-glib0` 会作为 NM 的硬依赖被带上（纯库，不启动任何服务）。

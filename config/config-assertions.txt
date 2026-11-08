@@ -40,6 +40,12 @@ MODULE_SIG=n
 MODULE_COMPRESS=n
 EXTRA_FIRMWARE_DIR="firmware"
 
+# --- seccomp: OpenSSH 10.x (sid) sandbox needs prctl(PR_SET_SECCOMP).
+# Without this sshd logs "ssh_sandbox_child: prctl(PR_SET_SECCOMP): Invalid
+# argument [preauth]" and refuses every connection.
+SECCOMP=y
+SECCOMP_FILTER=y
+
 # --- USB-C host track (see docs/CI.md) ---
 # DWC3 Mode Selection is a Kconfig choice; HOST and GADGET are mutually
 # exclusive. Without HOST=y + xHCI built in, no USB peripheral (U disk,
